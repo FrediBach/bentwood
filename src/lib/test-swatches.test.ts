@@ -22,34 +22,30 @@ function pathPoints(path: string): Point[] {
 
 const samples = (svg: string) => [
   ...svg.matchAll(
-    /<g id="swatch-(\d+)" data-spacing="([\d.]+)" data-bridge="([\d.]+)">([\s\S]*?)<\/g>/g,
+    /<g id="swatch-(\d+)" data-spacing="([\d.]+)" data-bridge="([\d.]+)"[^>]*>([\s\S]*?)<\/g>/g,
   ),
 ]
 
 describe('test swatch sheet', () => {
   it.each([
-    'classic',
-    'graded',
-    'wave',
-    'zigzag',
-    'small-wave',
-    'honeycomb',
-    'meander',
-    'meander-wide',
-  ] as const)(
-    'exports nine separate %s samples with uncut grip tabs and actual settings',
-    (pattern) => {
-      const meander = pattern === 'meander' || pattern === 'meander-wide'
+    { pattern: 'classic' },
+    { pattern: 'graded' },
+    { pattern: 'wave' },
+    { pattern: 'zigzag' },
+    { pattern: 'honeycomb', honeycombRoundness: 0, honeycombWidth: 0.5 },
+    { pattern: 'honeycomb', honeycombRoundness: 1, honeycombWidth: 0.9375 },
+    { pattern: 'meander', spacing: 3.04, bridge: 1.62, cutLength: 22.58, meanderOverlap: 0.160811 },
+    { pattern: 'meander', spacing: 3.04, bridge: 1.62, cutLength: 33.87, meanderOverlap: 0.08 },
+  ] satisfies Partial<Design>[])(
+    'exports nine separate $pattern samples with uncut grip tabs and actual settings',
+    (settings) => {
       const design: Design = {
         ...defaultDesign,
         name: 'Study <one>',
-        pattern,
-        ...(meander && {
-          spacing: 3.04,
-          bridge: 1.62,
-          cutLength: pattern === 'meander' ? 22.58 : 33.87,
-        }),
+        ...settings,
       }
+      const pattern = design.pattern
+      const meander = pattern === 'meander'
       const svg = exportTestSwatchesSVG(design)
       const size = getTestSwatchSheetSize(design)
       expect(svg).toContain(`width="${size.width}mm" height="${size.height}mm"`)
@@ -101,10 +97,10 @@ describe('test swatch sheet', () => {
           expect(point.y).toBeGreaterThanOrEqual(box.y - 1e-6)
           expect(point.y).toBeLessThanOrEqual(box.y + box.height + 1e-6)
         }
-        if (pattern === 'small-wave' || pattern === 'honeycomb') {
+        if (pattern === 'honeycomb') {
           expect(sample[4]).toMatch(/d="[^"]+ Z"/)
-          expect(svg).toContain(pattern === 'small-wave' ? 'Small waves' : 'Honeycomb')
-          if (pattern === 'honeycomb')
+          expect(svg).toContain('Honeycomb')
+          if (design.honeycombRoundness > 0)
             expect(paths.some((path) => new Set(path.map((point) => point.x)).size > 4)).toBe(true)
         } else {
           expect(points.some((point) => Math.abs(point.y - box.y) < 1e-6)).toBe(true)
@@ -115,21 +111,21 @@ describe('test swatch sheet', () => {
         expect(label).toContain(`${meander ? 'E' : 'B'} ${sample[3]} mm`)
         expect(label).toContain(`T ${design.thickness} mm`)
         expect(label).toContain(`K ${design.kerf} mm`)
+        if (pattern === 'honeycomb') {
+          expect(label).toContain(`W ${design.honeycombWidth * 100} %`)
+          expect(label).toContain(`R ${design.honeycombRoundness * 100} %`)
+        }
+        if (meander) expect(label).toContain(`O ${design.meanderOverlap * 100} %`)
         for (const text of label.matchAll(/<text x="([\d.]+)" y="([\d.]+)">/g)) {
           expect(Number(text[1])).toBeGreaterThan(box.x)
           expect(Number(text[1])).toBeLessThan(box.x + 24)
           expect(Number(text[2])).toBeGreaterThan(box.y)
           expect(Number(text[2])).toBeLessThan(box.y + box.height)
         }
-        if (
-          pattern === 'wave' ||
-          pattern === 'zigzag' ||
-          pattern === 'meander' ||
-          pattern === 'meander-wide'
-        )
+        if (pattern === 'wave' || pattern === 'zigzag' || pattern === 'meander')
           expect(paths.some((path) => new Set(path.map((point) => point.x)).size > 2)).toBe(true)
-        if (pattern === 'meander' || pattern === 'meander-wide') {
-          expect(svg).toContain(pattern === 'meander' ? 'Fine meander' : 'Wide meander')
+        if (pattern === 'meander') {
+          expect(svg).toContain('Meander')
           expect(paths.some((path) => path.length > 8)).toBe(true)
           expect(sample[4]).not.toMatch(/d="[^"]+ Z"/)
         }
@@ -168,10 +164,10 @@ describe('test swatch sheet', () => {
     expect(() => exportTestSwatchesSVG({ ...defaultDesign, kerf: 1, spacing: 1 })).toThrow()
   })
 
-  it.each(['meander', 'meander-wide'] as const)(
-    'blocks a %s sheet when a variation consumes the material between slit ends',
-    (pattern) => {
-      const design: Design = { ...defaultDesign, pattern }
+  it.each([0.160811, 0.08])(
+    'blocks a meander sheet at overlap %s when a variation consumes the material between slit ends',
+    (meanderOverlap) => {
+      const design: Design = { ...defaultDesign, pattern: 'meander', meanderOverlap }
       expect(() => exportSVG(design)).not.toThrow()
       // The tighter-spacing, wider-separation corner is unsafe even though
       // the selected full-panel settings leave connecting material.

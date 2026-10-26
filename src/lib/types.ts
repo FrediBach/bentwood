@@ -3,10 +3,9 @@ export type Segment =
   | { id: string; type: 'straight'; length: number }
   | { id: string; type: 'arc'; radius: number; angle: number }
 export type OutlineKind = 'rectangle' | 'square' | 'ellipse' | 'circle' | 'triangle' | 'custom'
-export type HingePattern =
-  'classic' | 'graded' | 'wave' | 'zigzag' | 'small-wave' | 'honeycomb' | 'meander' | 'meander-wide'
+export type HingePattern = 'classic' | 'graded' | 'wave' | 'zigzag' | 'honeycomb' | 'meander'
 export type Design = {
-  version: 3
+  version: 4
   name: string
   segments: Segment[]
   outline: OutlineKind
@@ -19,6 +18,9 @@ export type Design = {
   cutLength: number
   kerf: number
   pattern: HingePattern
+  honeycombRoundness: number
+  honeycombWidth: number
+  meanderOverlap: number
 }
 // Straight cuts retain a compact representation. For shaped cuts, x identifies
 // the column and points contains the actual, clipped laser centre line.

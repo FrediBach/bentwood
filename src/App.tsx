@@ -50,6 +50,8 @@ import {
 import type { Design, OutlineKind, Segment } from './lib/types'
 import { exportTestSwatchesSVG, getTestSwatchSheetSize } from './lib/test-swatches'
 import { meanderCell, meanderRepeat } from './lib/meander'
+import { honeycombCell } from './lib/honeycomb'
+import { familyPresets } from './lib/pattern-presets'
 
 type View = 'preview' | 'outline' | 'plan'
 // Keep the original storage key so validation can migrate existing projects in place.
@@ -79,39 +81,25 @@ const hingePatterns: { value: Design['pattern']; label: string; description: str
       'Angular cuts for a geometric texture. Test a swatch to find the right flexibility.',
   },
   {
-    value: 'small-wave',
-    label: 'Small waves',
-    description:
-      'Staggered openings form the interlocking wave texture from the reference. Their long axis runs across the sheet width, perpendicular to the bend.',
-  },
-  {
     value: 'honeycomb',
     label: 'Honeycomb',
     description:
-      'Staggered curved openings with pointed ends form the honeycomb texture from the reference. Their long axis runs across the sheet width, perpendicular to the bend.',
+      'Staggered openings run across the sheet width. Adjust their width and roundness from slender diamonds to curved honeycombs.',
   },
   {
     value: 'meander',
-    label: 'Fine meander',
+    label: 'Meander',
     description:
-      'Closely repeated rounded slits follow the reference meander, with overlapping ends separated by connecting material.',
-  },
-  {
-    value: 'meander-wide',
-    label: 'Wide meander',
-    description:
-      'A more open repeat of the rounded slits creates a broader meander texture. This variation uses less overlap between neighboring ends.',
+      'Rounded slits retain material between their overlapping ends. Adjust the overlap and dimensions for fine, wide, or intermediate textures.',
   },
 ]
 
 function PatternDrawing({ pattern }: { pattern: Design['pattern'] }) {
-  if (pattern === 'meander' || pattern === 'meander-wide') {
+  if (pattern === 'meander') {
     const miniature = {
       ...defaultDesign,
       pattern,
-      spacing: 3.04,
-      bridge: 1.62,
-      cutLength: pattern === 'meander' ? 22.58 : 33.87,
+      ...familyPresets.meander[0].settings,
     }
     const cell = meanderCell(miniature)
     const scale = 1.45
@@ -135,44 +123,29 @@ function PatternDrawing({ pattern }: { pattern: Design['pattern'] }) {
       </svg>
     )
   }
-  if (pattern === 'honeycomb')
+  if (pattern === 'honeycomb') {
+    const miniature = { ...defaultDesign, ...familyPresets.honeycomb[1].settings }
+    const cell = honeycombCell(miniature)
+    const scale = 1.4
+    const repeat = (miniature.cutLength + miniature.bridge) * scale
     return (
       <svg viewBox="0 0 64 32" aria-hidden="true" focusable="false">
         {Array.from({ length: 9 }, (_, row) =>
           Array.from({ length: 3 }, (_, column) => {
-            const x = 16 + (column - 1) * 36.64 + (row % 2 ? 18.32 : 0)
-            const y = 2 + row * 3.35
+            const x = 16 + (column - 1) * repeat + (row % 2 ? repeat / 2 : 0)
+            const y = 2 + row * miniature.spacing * scale
             return (
-              <path
+              <polygon
                 key={`${row}-${column}`}
-                d="M0 0 C.11251 0 .18706 .243 .25352 .483 C.33474 .77622 .41407 1 .5 1 C.58593 1 .66526 .77622 .74648 .483 C.81294 .243 .88749 0 1 0 C.88749 0 .81294 -.243 .74648 -.483 C.66526 -.77622 .58593 -1 .5 -1 C.41407 -1 .33474 -.77622 .25352 -.483 C.18706 -.243 .11251 0 0 0 Z"
-                transform={`translate(${x - 13.74} ${y}) scale(27.48 1.57)`}
+                points={cell.map((p) => `${x + p.y * scale},${y + p.x * scale}`).join(' ')}
                 strokeWidth={0.6}
-                vectorEffect="non-scaling-stroke"
               />
             )
           }),
         )}
       </svg>
     )
-  if (pattern === 'small-wave')
-    return (
-      <svg viewBox="0 0 64 32" aria-hidden="true" focusable="false">
-        {Array.from({ length: 9 }, (_, row) =>
-          Array.from({ length: 3 }, (_, column) => {
-            const x = 16 + (column - 1) * 29.33 + (row % 2 ? 14.67 : 0)
-            const y = 2 + row * 3.35
-            return (
-              <path
-                key={`${row}-${column}`}
-                d={`M${x - 11} ${y} l11 -0.84 l11 0.84 l-11 0.84 Z`}
-                strokeWidth={0.7}
-              />
-            )
-          }),
-        )}
-      </svg>
-    )
+  }
   const columns = pattern === 'graded' ? [8, 16, 26, 39, 55] : [8, 20, 32, 44, 56]
   return (
     <svg viewBox="0 0 64 32" aria-hidden="true" focusable="false">
@@ -232,6 +205,7 @@ function NumberField({
   step = 1,
   unit = 'mm',
   compact = false,
+  precision = 2,
 }: {
   label: string
   value: number
@@ -241,10 +215,18 @@ function NumberField({
   step?: number
   unit?: string
   compact?: boolean
+  precision?: number
 }) {
   const [text, setText] = useState(String(value))
-  useEffect(() => setText(String(Math.round(value * 100) / 100)), [value])
+  const edited = useRef(false)
+  useEffect(() => {
+    edited.current = false
+    setText(String(Number(value.toFixed(precision))))
+  }, [value, precision])
   function commit() {
+    // Display rounding must not alter an imported value merely by focusing it.
+    if (!edited.current) return
+    edited.current = false
     const number = Number(text)
     if (text.trim() && Number.isFinite(number)) {
       const clamped = Math.max(min, Math.min(max, number))
@@ -262,7 +244,10 @@ function NumberField({
           max={max}
           step={step}
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => {
+            edited.current = true
+            setText(e.target.value)
+          }}
           onBlur={commit}
           onKeyDown={(e) => {
             if (e.key === 'Enter') e.currentTarget.blur()
@@ -271,6 +256,48 @@ function NumberField({
         <span className="input-unit">{unit}</span>
       </div>
     </label>
+  )
+}
+function PercentageField({
+  label,
+  value,
+  onChange,
+  min = 0,
+  max = 100,
+  hint,
+}: {
+  label: string
+  value: number
+  onChange: (value: number) => void
+  min?: number
+  max?: number
+  hint: string
+}) {
+  const percentage = Number((value * 100).toFixed(4))
+  return (
+    <div className="percentage-field">
+      <NumberField
+        label={label}
+        value={percentage}
+        onChange={(next) => onChange(next / 100)}
+        min={min}
+        max={max}
+        step={0.01}
+        unit="%"
+        precision={4}
+      />
+      <input
+        type="range"
+        aria-label={`${label} adjustment`}
+        min={min}
+        max={max}
+        step={0.01}
+        value={percentage}
+        onPointerDown={(event) => event.currentTarget.setPointerCapture(event.pointerId)}
+        onChange={(event) => onChange(Number(event.target.value) / 100)}
+      />
+      <p className="control-hint">{hint}</p>
+    </div>
   )
 }
 function IconButton({
@@ -371,15 +398,11 @@ export default function App() {
   const pointerHistory = useRef({ active: false, recorded: false })
   const plan = useMemo(() => createCutPlan(design), [design])
   const swatchSize = useMemo(() => getTestSwatchSheetSize(design), [design])
-  const isMeander = design.pattern === 'meander' || design.pattern === 'meander-wide'
-  const referenceSettings =
-    design.pattern === 'small-wave'
-      ? { spacing: 2.4, bridge: 5.25, cutLength: 15.75 }
-      : design.pattern === 'honeycomb'
-        ? { spacing: 2.4, bridge: 6.56, cutLength: 19.68 }
-        : isMeander
-          ? { spacing: 3.04, bridge: 1.62, cutLength: design.pattern === 'meander' ? 22.58 : 33.87 }
-          : null
+  const isMeander = design.pattern === 'meander'
+  const patternPresets =
+    design.pattern === 'honeycomb' || design.pattern === 'meander'
+      ? familyPresets[design.pattern]
+      : null
   const selected = design.segments.find((s) => s.id === selectedId)
   const total = pathLength(design.segments)
   const filename = (design.name.trim() || 'bentwood-design')
@@ -418,6 +441,19 @@ export default function App() {
         : h,
     )
   }
+  useEffect(() => {
+    const finishPointerEdit = () => {
+      pointerHistory.current.active = false
+    }
+    window.addEventListener('pointerup', finishPointerEdit)
+    window.addEventListener('pointercancel', finishPointerEdit)
+    window.addEventListener('blur', finishPointerEdit)
+    return () => {
+      window.removeEventListener('pointerup', finishPointerEdit)
+      window.removeEventListener('pointercancel', finishPointerEdit)
+      window.removeEventListener('blur', finishPointerEdit)
+    }
+  }, [])
   function saveProject() {
     download(JSON.stringify(design, null, 2), `${filename}.bentwood.json`, 'application/json')
     setNotice('Project file downloaded.')
@@ -1061,18 +1097,71 @@ export default function App() {
               <p className="control-hint" id="pattern-description">
                 {hingePatterns.find((pattern) => pattern.value === design.pattern)?.description}
               </p>
-              {referenceSettings && (
-                <div className="reference-pattern-settings">
-                  <Button variant="outline" size="sm" onClick={() => patch(referenceSettings)}>
-                    {design.pattern === 'meander-wide'
-                      ? 'Suggested proportions'
-                      : 'Reference proportions'}
-                  </Button>
+              {patternPresets && (
+                <div className="family-pattern-settings">
+                  <span className="family-presets-label">Shape presets</span>
+                  <div className="family-presets">
+                    {patternPresets.map((preset) => (
+                      <Button
+                        key={preset.id}
+                        variant="outline"
+                        size="sm"
+                        aria-pressed={Object.entries(preset.settings).every(([key, value]) => {
+                          const current = design[key as keyof Design]
+                          return typeof value === 'number' && typeof current === 'number'
+                            ? Math.abs(current - value) < 1e-10
+                            : current === value
+                        })}
+                        onClick={() => patch(preset.settings)}
+                      >
+                        {preset.label}
+                      </Button>
+                    ))}
+                  </div>
                   <p className="control-hint">
                     {isMeander
                       ? 'Spacing sets row pitch; cut length sets the full slit length across the sheet. End separation sets the transverse gap between overlapping slit ends.'
                       : 'Spacing sets row pitch; cut length sets opening length; bridge sets the gap between ends.'}
                   </p>
+                  <div
+                    className="family-parameters"
+                    onPointerDownCapture={() => {
+                      pointerHistory.current = { active: true, recorded: false }
+                    }}
+                    onPointerUpCapture={() => {
+                      pointerHistory.current.active = false
+                    }}
+                    onPointerCancelCapture={() => {
+                      pointerHistory.current.active = false
+                    }}
+                  >
+                    {design.pattern === 'honeycomb' ? (
+                      <>
+                        <PercentageField
+                          label="Roundness"
+                          value={design.honeycombRoundness}
+                          onChange={(value) => patch({ honeycombRoundness: value })}
+                          hint="Straight diamond sides at 0%; curved honeycomb sides at 100%."
+                        />
+                        <PercentageField
+                          label="Opening width"
+                          value={design.honeycombWidth}
+                          onChange={(value) => patch({ honeycombWidth: value })}
+                          min={10}
+                          max={95}
+                          hint="Width of each opening as a share of the row spacing."
+                        />
+                      </>
+                    ) : (
+                      <PercentageField
+                        label="End overlap"
+                        value={design.meanderOverlap}
+                        onChange={(value) => patch({ meanderOverlap: value })}
+                        max={30}
+                        hint="How much neighboring slit ends overlap along their length. Lower values spread the repeats farther apart."
+                      />
+                    )}
+                  </div>
                 </div>
               )}
               <div className="field-row">
@@ -1082,7 +1171,7 @@ export default function App() {
                   onChange={(v) => patch({ spacing: v })}
                   min={1}
                   max={12}
-                  step={isMeander ? 0.01 : referenceSettings ? 0.1 : 0.5}
+                  step={patternPresets ? 0.01 : 0.5}
                 />
                 <NumberField
                   label={isMeander ? 'End separation' : 'Bridge'}
@@ -1090,13 +1179,7 @@ export default function App() {
                   onChange={(v) => patch({ bridge: v })}
                   min={0.5}
                   max={10}
-                  step={
-                    isMeander || design.pattern === 'honeycomb'
-                      ? 0.01
-                      : referenceSettings
-                        ? 0.25
-                        : 0.5
-                  }
+                  step={patternPresets ? 0.01 : 0.5}
                 />
               </div>
               <div className="field-row">
@@ -1106,13 +1189,7 @@ export default function App() {
                   onChange={(v) => patch({ cutLength: v })}
                   min={5}
                   max={80}
-                  step={
-                    isMeander || design.pattern === 'honeycomb'
-                      ? 0.01
-                      : referenceSettings
-                        ? 0.25
-                        : 1
-                  }
+                  step={patternPresets ? 0.01 : 1}
                 />
               </div>
               <div className="swatch-download">

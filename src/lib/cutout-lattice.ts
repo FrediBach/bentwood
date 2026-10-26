@@ -36,17 +36,6 @@ function clearanceEnvelope(cell: Point[], radius: number): Point[] {
   return [...half(points), ...half([...points].reverse())]
 }
 
-export function smallWaveCell(design: Design): Point[] {
-  const halfLong = design.cutLength / 2
-  const halfShort = design.spacing / 4
-  return [
-    { x: 0, y: -halfLong },
-    { x: halfShort, y: 0 },
-    { x: 0, y: halfLong },
-    { x: -halfShort, y: 0 },
-  ]
-}
-
 /** Staggered apertures with their long axes across the panel width.
  * Each cell is supplied relative to its centre, as a closed ring without a
  * repeated final point. Original contours supply the exported laser paths;
@@ -63,7 +52,10 @@ export function createCutoutLattice(
   const period = design.cutLength + design.bridge
   const halfLong = design.cutLength / 2
   const halfShort = Math.max(...cell.map((p) => Math.abs(p.x)))
-  const envelope = clearanceEnvelope(cell, design.kerf / 2 + 1e-6)
+  // Both an opening and the exported outside contour remove half a kerf.
+  // The full-width envelope also catches near misses that become severed
+  // ligaments only after the outer contour is cut.
+  const envelope = clearanceEnvelope(cell, design.kerf + 1e-6)
   const ellipse = design.outline === 'ellipse' || design.outline === 'circle'
   let start = 0
   let previousColumn = -Infinity

@@ -6,7 +6,9 @@ import type { Design, Point } from './types'
 
 const reference = (overrides: Partial<Design> = {}): Design => ({
   ...structuredClone(defaultDesign),
-  pattern: 'small-wave',
+  pattern: 'honeycomb',
+  honeycombRoundness: 0,
+  honeycombWidth: 0.5,
   spacing: 2.4,
   bridge: 5.25,
   cutLength: 15.75,
@@ -112,7 +114,7 @@ describe('reference small-wave lattice', () => {
   })
 
   it('blocks kerfs that consume a web between rows and leaves impossibly narrow zones uncut', () => {
-    expect(() => exportSVG(reference({ spacing: 1, kerf: 0.5 }))).toThrow('connected material')
+    expect(() => exportSVG(reference({ spacing: 1, kerf: 1 }))).toThrow('connected material')
     const plan = createCutPlan(
       reference({ segments: [{ id: 'tiny', type: 'arc', radius: 1, angle: 2 }] }),
     )

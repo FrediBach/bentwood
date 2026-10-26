@@ -148,24 +148,28 @@ test('mobile panels and accessible export dialog', async ({ page }) => {
   await wave.check()
   await expect(wave).toBeChecked()
   await expect(page.locator('#pattern-description')).toContainText('Undulating cuts')
-  const smallWaves = page.getByRole('radio', { name: 'Small waves', exact: true })
-  await smallWaves.check()
-  await page.getByRole('button', { name: 'Reference proportions', exact: true }).click()
-  await expect(page.locator('#pattern-description')).toContainText('perpendicular to the bend')
   const honeycomb = page.getByRole('radio', { name: 'Honeycomb', exact: true })
   await honeycomb.check()
-  await page.getByRole('button', { name: 'Reference proportions', exact: true }).click()
+  await expect(page.locator('.pattern-selector input[type="radio"]')).toHaveCount(6)
+  await page.getByRole('button', { name: 'Small waves', exact: true }).click()
+  await expect(page.getByRole('spinbutton', { name: 'Roundness %', exact: true })).toHaveValue('0')
+  await page.getByRole('button', { name: 'Honeycomb', exact: true }).click()
   await expect(honeycomb).toBeChecked()
-  await expect(page.locator('#pattern-description')).toContainText('curved openings')
-  const fineMeander = page.getByRole('radio', { name: 'Fine meander', exact: true })
-  await fineMeander.check()
-  await page.getByRole('button', { name: 'Reference proportions', exact: true }).click()
-  await expect(fineMeander).toBeChecked()
-  const wideMeander = page.getByRole('radio', { name: 'Wide meander', exact: true })
-  await wideMeander.check()
-  await page.getByRole('button', { name: 'Suggested proportions', exact: true }).click()
-  await expect(wideMeander).toBeChecked()
-  await expect(page.locator('#pattern-description')).toContainText('more open repeat')
+  await expect(page.getByRole('spinbutton', { name: 'Opening width %', exact: true })).toHaveValue(
+    '93.75',
+  )
+  const meander = page.getByRole('radio', { name: 'Meander', exact: true })
+  await meander.check()
+  await page.getByRole('button', { name: 'Fine', exact: true }).click()
+  await expect(page.getByRole('spinbutton', { name: 'End overlap %', exact: true })).toHaveValue(
+    '16.0811',
+  )
+  await page.getByRole('button', { name: 'Wide', exact: true }).click()
+  await expect(meander).toBeChecked()
+  await expect(page.getByRole('spinbutton', { name: 'End overlap %', exact: true })).toHaveValue(
+    '8',
+  )
+  await expect(page.getByRole('slider', { name: 'End overlap adjustment' })).toBeVisible()
   await expect(
     page.getByRole('button', { name: 'Download test swatches SVG', exact: true }),
   ).toBeVisible()
@@ -179,7 +183,7 @@ test('mobile panels and accessible export dialog', async ({ page }) => {
       nodes: v.nodes.map((n) => n.target),
     })),
   ).toEqual([])
-  await wideMeander.scrollIntoViewIfNeeded()
+  await meander.scrollIntoViewIfNeeded()
   await page.screenshot({ path: 'test-results/patterns-mobile.png' })
   await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
@@ -256,7 +260,7 @@ test('existing projects migrate to cuts that meet the panel edges', async ({ pag
   await page.getByRole('button', { name: 'Save project file', exact: true }).click()
   const file = await saved
   const migrated = JSON.parse(await readFile((await file.path())!, 'utf8'))
-  expect(migrated.version).toBe(3)
+  expect(migrated.version).toBe(4)
   expect(migrated.pattern).toBe('classic')
   expect(migrated).not.toHaveProperty('edgeMargin')
   expect(migrated.name).toBe(legacyProject.name)
@@ -310,7 +314,7 @@ test('hinge patterns update previews, exports and saved projects with test swatc
   const file = await saved
   const project = JSON.parse(await readFile((await file.path())!, 'utf8'))
   expect(project.pattern).toBe('wave')
-  expect(project.version).toBe(3)
+  expect(project.version).toBe(4)
   await page.reload()
   await expect(pattern('Wavy slits')).toBeChecked()
   await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
@@ -364,24 +368,27 @@ for (const pattern of [
     label: 'Small waves',
     bridge: 5.25,
     cutLength: 15.75,
-    description: 'interlocking wave texture',
+    roundness: 0,
+    openingWidth: 0.5,
   },
   {
     id: 'honeycomb',
     label: 'Honeycomb',
     bridge: 6.56,
     cutLength: 19.68,
-    description: 'curved openings with pointed ends',
+    roundness: 1,
+    openingWidth: 0.9375,
   },
 ]) {
   test(`${pattern.label} keeps closed openings in the preview, exports and saved projects`, async ({
     page,
   }) => {
+    test.setTimeout(45000)
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))
     await page.goto('/')
-    await page.getByRole('radio', { name: pattern.label, exact: true }).check()
-    await page.getByRole('button', { name: 'Reference proportions', exact: true }).click()
+    await page.getByRole('radio', { name: 'Honeycomb', exact: true }).check()
+    await page.getByRole('button', { name: pattern.label, exact: true }).click()
     await expect(page.getByRole('spinbutton', { name: 'Cut spacing mm', exact: true })).toHaveValue(
       '2.4',
     )
@@ -391,7 +398,12 @@ for (const pattern of [
     await expect(page.getByRole('spinbutton', { name: 'Cut length mm', exact: true })).toHaveValue(
       String(pattern.cutLength),
     )
-    await expect(page.locator('#pattern-description')).toContainText(pattern.description)
+    await expect(page.getByRole('spinbutton', { name: 'Roundness %', exact: true })).toHaveValue(
+      String(pattern.roundness * 100),
+    )
+    await expect(
+      page.getByRole('spinbutton', { name: 'Opening width %', exact: true }),
+    ).toHaveValue(String(pattern.openingWidth * 100))
     await expect(page.locator('.plywood-preview canvas')).toBeVisible()
     await page.screenshot({ path: `test-results/${pattern.id}-bent-preview.png` })
     await page.getByLabel('Unfold').fill('0')
@@ -408,13 +420,32 @@ for (const pattern of [
     await page.getByRole('button', { name: 'Save project file', exact: true }).click()
     const projectFile = await saved
     const project = JSON.parse(await readFile((await projectFile.path())!, 'utf8'))
-    expect(project.pattern).toBe(pattern.id)
+    expect(project.pattern).toBe('honeycomb')
+    expect(project.honeycombRoundness).toBe(pattern.roundness)
+    expect(project.honeycombWidth).toBe(pattern.openingWidth)
     expect(project.spacing).toBe(2.4)
     expect(project.bridge).toBe(pattern.bridge)
     expect(project.cutLength).toBe(pattern.cutLength)
-    expect(project.version).toBe(3)
+    expect(project.version).toBe(4)
     await page.reload()
-    await expect(page.getByRole('radio', { name: pattern.label, exact: true })).toBeChecked()
+    await expect(page.getByRole('radio', { name: 'Honeycomb', exact: true })).toBeChecked()
+    const legacy = { ...project, version: 3, pattern: pattern.id, name: `${pattern.label} legacy` }
+    delete legacy.honeycombRoundness
+    delete legacy.honeycombWidth
+    delete legacy.meanderOverlap
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'legacy.bentwood.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(legacy)),
+    })
+    await expect(page.getByLabel('Project name')).toHaveValue(legacy.name)
+    await expect(page.getByRole('radio', { name: 'Honeycomb', exact: true })).toBeChecked()
+    await expect(page.getByRole('spinbutton', { name: 'Roundness %', exact: true })).toHaveValue(
+      String(pattern.roundness * 100),
+    )
+    await expect(
+      page.getByRole('spinbutton', { name: 'Opening width %', exact: true }),
+    ).toHaveValue(String(pattern.openingWidth * 100))
 
     await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
     const exported = page.waitForEvent('download')
@@ -426,7 +457,7 @@ for (const pattern of [
     const swatches = page.waitForEvent('download')
     await page.getByRole('button', { name: 'Download test swatches SVG', exact: true }).click()
     const swatchFile = await swatches
-    expect(swatchFile.suggestedFilename()).toContain(`-${pattern.id}-test-swatches.svg`)
+    expect(swatchFile.suggestedFilename()).toContain('-honeycomb-test-swatches.svg')
     const swatchSVG = await readFile((await swatchFile.path())!, 'utf8')
     const sampleContours = await page.evaluate((contents) => {
       const document = new DOMParser().parseFromString(contents, 'image/svg+xml')
@@ -436,22 +467,23 @@ for (const pattern of [
     }, swatchSVG)
     expect(sampleContours).toHaveLength(9)
     expect(sampleContours.every((count) => count > 0)).toBe(true)
-    expect(swatchSVG).toContain(pattern.label)
+    expect(swatchSVG).toContain('Honeycomb')
     expect(errors).toEqual([])
   })
 }
 
 for (const pattern of [
-  { id: 'meander', label: 'Fine meander', preset: 'Reference proportions', cutLength: 22.58 },
-  { id: 'meander-wide', label: 'Wide meander', preset: 'Suggested proportions', cutLength: 33.87 },
+  { id: 'meander', label: 'Fine meander', preset: 'Fine', cutLength: 22.58, overlap: 0.160811 },
+  { id: 'meander-wide', label: 'Wide meander', preset: 'Wide', cutLength: 33.87, overlap: 0.08 },
 ]) {
   test(`${pattern.label} preserves rounded slits through previews, exports and saved projects`, async ({
     page,
   }) => {
+    test.setTimeout(45000)
     const errors: string[] = []
     page.on('pageerror', (error) => errors.push(error.message))
     await page.goto('/')
-    await page.getByRole('radio', { name: pattern.label, exact: true }).check()
+    await page.getByRole('radio', { name: 'Meander', exact: true }).check()
     await page.getByRole('button', { name: pattern.preset, exact: true }).click()
     await expect(page.getByRole('spinbutton', { name: 'Cut spacing mm', exact: true })).toHaveValue(
       '3.04',
@@ -461,6 +493,9 @@ for (const pattern of [
     ).toHaveValue('1.62')
     await expect(page.getByRole('spinbutton', { name: 'Cut length mm', exact: true })).toHaveValue(
       String(pattern.cutLength),
+    )
+    await expect(page.getByRole('spinbutton', { name: 'End overlap %', exact: true })).toHaveValue(
+      String(Number((pattern.overlap * 100).toFixed(4))),
     )
     await expect(page.locator('.plywood-preview canvas')).toBeVisible()
     await expect(page.getByText('Dense pattern: cuts shown as lines')).toHaveCount(0)
@@ -483,13 +518,28 @@ for (const pattern of [
     await page.getByRole('button', { name: 'Save project file', exact: true }).click()
     const projectFile = await saved
     const project = JSON.parse(await readFile((await projectFile.path())!, 'utf8'))
-    expect(project.pattern).toBe(pattern.id)
+    expect(project.pattern).toBe('meander')
+    expect(project.meanderOverlap).toBe(pattern.overlap)
     expect(project.spacing).toBe(3.04)
     expect(project.bridge).toBe(1.62)
     expect(project.cutLength).toBe(pattern.cutLength)
-    expect(project.version).toBe(3)
+    expect(project.version).toBe(4)
     await page.reload()
-    await expect(page.getByRole('radio', { name: pattern.label, exact: true })).toBeChecked()
+    await expect(page.getByRole('radio', { name: 'Meander', exact: true })).toBeChecked()
+    const legacy = { ...project, version: 3, pattern: pattern.id, name: `${pattern.label} legacy` }
+    delete legacy.honeycombRoundness
+    delete legacy.honeycombWidth
+    delete legacy.meanderOverlap
+    await page.locator('input[type="file"]').setInputFiles({
+      name: 'legacy.bentwood.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(legacy)),
+    })
+    await expect(page.getByLabel('Project name')).toHaveValue(legacy.name)
+    await expect(page.getByRole('radio', { name: 'Meander', exact: true })).toBeChecked()
+    await expect(page.getByRole('spinbutton', { name: 'End overlap %', exact: true })).toHaveValue(
+      String(Number((pattern.overlap * 100).toFixed(4))),
+    )
 
     await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
     const exported = page.waitForEvent('download')
@@ -508,7 +558,7 @@ for (const pattern of [
     const swatches = page.waitForEvent('download')
     await page.getByRole('button', { name: 'Download test swatches SVG', exact: true }).click()
     const swatchFile = await swatches
-    expect(swatchFile.suggestedFilename()).toContain(`-${pattern.id}-test-swatches.svg`)
+    expect(swatchFile.suggestedFilename()).toContain('-meander-test-swatches.svg')
     const swatchSVG = await readFile((await swatchFile.path())!, 'utf8')
     const samplePaths = await page.evaluate((contents) => {
       const document = new DOMParser().parseFromString(contents, 'image/svg+xml')
@@ -521,10 +571,142 @@ for (const pattern of [
       samplePaths.every((sample) => sample.some((path) => (path.match(/L/g)?.length ?? 0) > 8)),
     ).toBe(true)
     expect(samplePaths.flat().every((path) => !path.endsWith('Z'))).toBe(true)
-    expect(swatchSVG).toContain(pattern.label)
+    expect(swatchSVG).toContain('Meander')
     expect(errors).toEqual([])
   })
 }
+
+test('parametric families preserve intermediate shapes through undo, saving and exports', async ({
+  page,
+}) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.goto('/')
+  await expect(page.locator('.pattern-selector input[type="radio"]')).toHaveCount(6)
+  await expect(page.getByRole('radio', { name: 'Small waves', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('radio', { name: 'Wide meander', exact: true })).toHaveCount(0)
+  await page.getByRole('radio', { name: 'Honeycomb', exact: true }).check()
+  await page.getByRole('button', { name: 'Small waves', exact: true }).click()
+  await page.getByRole('button', { name: 'Cut plan', exact: true }).click()
+  const closedCuts = page.locator('.cut-plan-view [data-hinge-cut][d$="Z"]')
+  const diamondPath = await closedCuts.first().getAttribute('d')
+  const roundness = page.getByRole('spinbutton', { name: 'Roundness %', exact: true })
+  await roundness.fill('37.5')
+  await roundness.press('Enter')
+  await page.getByRole('button', { name: 'Undo (⌘ / Ctrl Z)', exact: true }).click()
+  await expect(roundness).toHaveValue('0')
+  await page.getByRole('button', { name: 'Redo (⌘ / Ctrl Shift Z)', exact: true }).click()
+  await expect(roundness).toHaveValue('37.5')
+  const opening = page.getByRole('spinbutton', { name: 'Opening width %', exact: true })
+  await opening.fill('72')
+  await opening.press('Enter')
+  await expect(page.getByRole('button', { name: 'Small waves', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  )
+  const honeycombPath = await closedCuts.first().getAttribute('d')
+  expect(honeycombPath).not.toBe(diamondPath)
+  expect(honeycombPath!.match(/L/g)!.length).toBeGreaterThan(4)
+  await page.screenshot({ path: 'test-results/honeycomb-intermediate-cut-plan.png' })
+
+  let saved = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save project file', exact: true }).click()
+  let file = await saved
+  let project = JSON.parse(await readFile((await file.path())!, 'utf8'))
+  expect(project.version).toBe(4)
+  expect(project.honeycombRoundness).toBe(0.375)
+  expect(project.honeycombWidth).toBe(0.72)
+  await page.reload()
+  await expect(roundness).toHaveValue('37.5')
+  await expect(opening).toHaveValue('72')
+  await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
+  let exported = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download SVG', exact: true }).click()
+  let svgFile = await exported
+  expect(await readFile((await svgFile.path())!, 'utf8')).toContain(`d="${honeycombPath}"`)
+  await page.getByRole('button', { name: 'Close dialog', exact: true }).click()
+
+  await page.getByRole('radio', { name: 'Meander', exact: true }).check()
+  await page.getByRole('button', { name: 'Fine', exact: true }).click()
+  const overlap = page.getByRole('slider', { name: 'End overlap adjustment', exact: true })
+  await overlap.fill('12.5')
+  const cutLength = page.getByRole('spinbutton', { name: 'Cut length mm', exact: true })
+  await cutLength.fill('28')
+  await cutLength.press('Enter')
+  await expect(page.getByRole('spinbutton', { name: 'End overlap %', exact: true })).toHaveValue(
+    '12.5',
+  )
+  await expect(page.getByRole('button', { name: 'Fine', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  )
+  await page.getByRole('button', { name: 'Cut plan', exact: true }).click()
+  const meanderPath = await page
+    .locator('.cut-plan-view [data-hinge-cut]')
+    .first()
+    .getAttribute('d')
+  await page.screenshot({ path: 'test-results/meander-intermediate-cut-plan.png' })
+  saved = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save project file', exact: true }).click()
+  file = await saved
+  project = JSON.parse(await readFile((await file.path())!, 'utf8'))
+  expect(project.pattern).toBe('meander')
+  expect(project.meanderOverlap).toBe(0.125)
+  expect(project.cutLength).toBe(28)
+  expect(project.honeycombRoundness).toBe(0.375)
+  expect(project.honeycombWidth).toBe(0.72)
+  await page.reload()
+  await expect(overlap).toHaveValue('12.5')
+  await expect(cutLength).toHaveValue('28')
+  await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
+  exported = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download SVG', exact: true }).click()
+  svgFile = await exported
+  expect(await readFile((await svgFile.path())!, 'utf8')).toContain(`d="${meanderPath}"`)
+  expect(errors).toEqual([])
+})
+
+test('focusing a rounded percentage display preserves imported precision', async ({ page }) => {
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Cut plan', exact: true }).click()
+  let saved = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save project file', exact: true }).click()
+  let file = await saved
+  const project = JSON.parse(await readFile((await file.path())!, 'utf8'))
+  Object.assign(project, {
+    name: 'Precise parameters',
+    pattern: 'meander',
+    spacing: 3.04,
+    bridge: 1.62,
+    cutLength: 28,
+    honeycombRoundness: 0.374567891,
+    honeycombWidth: 0.723456789,
+    meanderOverlap: 0.123456789,
+  })
+  await page.getByLabel('Import project file').setInputFiles({
+    name: 'precise.bentwood.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(project)),
+  })
+  await expect(page.getByLabel('Project name')).toHaveValue(project.name)
+  const overlap = page.getByRole('spinbutton', { name: 'End overlap %', exact: true })
+  await expect(overlap).toHaveValue('12.3457')
+  await overlap.focus()
+  await overlap.press('Tab')
+  await page.getByRole('radio', { name: 'Honeycomb', exact: true }).check()
+  for (const label of ['Roundness %', 'Opening width %']) {
+    const field = page.getByRole('spinbutton', { name: label, exact: true })
+    await field.focus()
+    await field.press('Tab')
+  }
+  saved = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save project file', exact: true }).click()
+  file = await saved
+  const savedProject = JSON.parse(await readFile((await file.path())!, 'utf8'))
+  expect(savedProject.honeycombRoundness).toBe(project.honeycombRoundness)
+  expect(savedProject.honeycombWidth).toBe(project.honeycombWidth)
+  expect(savedProject.meanderOverlap).toBe(project.meanderOverlap)
+})
 
 test('3D preview supports open cuts on round and concave outlines', async ({ page }) => {
   const errors: string[] = []

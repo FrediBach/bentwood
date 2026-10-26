@@ -5,13 +5,13 @@ import { meanderCell, meanderClearance, meanderRepeat } from './meander'
 import { createPanelSurface } from './panel-surface'
 import type { Design, Point } from './types'
 
-const patterns = ['meander', 'meander-wide'] as const
+const overlaps = [0.160811, 0.08] as const
 const reference = (overrides: Partial<Design> = {}): Design => ({
   ...structuredClone(defaultDesign),
   pattern: 'meander',
   spacing: 3.04,
   bridge: 1.62,
-  cutLength: overrides.pattern === 'meander-wide' ? 33.87 : 22.58,
+  cutLength: overrides.meanderOverlap === 0.08 ? 33.87 : 22.58,
   width: 100,
   segments: [{ id: 'arc', type: 'arc', radius: 100, angle: 180 / Math.PI }],
   ...overrides,
@@ -61,11 +61,16 @@ describe('rounded meander slits', () => {
     expect(turns.some((turn) => turn < -1e-6)).toBe(true)
   })
 
-  it('makes Wide a distinct lattice even with identical dimension controls', () => {
+  it('changes the repeat continuously without changing the slit dimensions', () => {
     const fine = reference(),
-      wide = reference({ pattern: 'meander-wide', cutLength: fine.cutLength })
+      wide = reference({ meanderOverlap: 0.08, cutLength: fine.cutLength }),
+      intermediate = reference({ meanderOverlap: 0.12, cutLength: fine.cutLength })
     expect(meanderRepeat(wide)).toBeGreaterThan(meanderRepeat(fine))
     expect(meanderRepeat(wide)).toBeLessThan(wide.cutLength)
+    expect(meanderRepeat(intermediate)).toBeGreaterThan(meanderRepeat(fine))
+    expect(meanderRepeat(intermediate)).toBeLessThan(meanderRepeat(wide))
+    expect(meanderCell(fine)).toEqual(meanderCell(intermediate))
+    expect(meanderCell(intermediate)).toEqual(meanderCell(wide))
     expect(createCutPlan(wide).cuts).not.toEqual(createCutPlan(fine).cuts)
   })
 
@@ -116,12 +121,12 @@ describe('rounded meander slits', () => {
     expect(() => exportSVG(crossing)).toThrow('connected material')
   })
 
-  it.each(patterns)(
-    '%s supports both existing controls and reference dimensions as open slits',
-    (pattern) => {
+  it.each(overlaps)(
+    'overlap %s supports both existing controls and reference dimensions as open slits',
+    (meanderOverlap) => {
       for (const input of [
-        { ...structuredClone(defaultDesign), pattern },
-        reference({ pattern }),
+        { ...structuredClone(defaultDesign), pattern: 'meander' as const, meanderOverlap },
+        reference({ meanderOverlap }),
       ]) {
         const plan = createCutPlan(input)
         expect(plan.warnings).toEqual([])
@@ -148,12 +153,12 @@ describe('rounded meander slits', () => {
     },
   )
 
-  for (const pattern of patterns)
+  for (const meanderOverlap of overlaps)
     it.each(['rectangle', 'triangle', 'ellipse', 'circle', 'custom'] as const)(
-      `${pattern} keeps the %s sheet connected while clipping its edge slits`,
+      `overlap ${meanderOverlap} keeps the %s sheet connected while clipping its edge slits`,
       (outline) => {
         const input = reference({
-          pattern,
+          meanderOverlap,
           outline,
           customOutline: [
             { x: 0, y: 0 },
@@ -185,39 +190,42 @@ describe('rounded meander slits', () => {
       },
     )
 
-  it.each(patterns)('%s uses the same open curves in the preview, SVG and DXF', (pattern) => {
-    const input = reference({ pattern }),
-      plan = createCutPlan(input)
-    const svg = exportSVG(input)
-    expect(svg).toContain('width="100mm" height="100mm"')
-    expect(svg.match(/ Z"/g)).toHaveLength(1)
-    for (const cut of plan.cuts) expect(svg).toContain(`d="${cutPathData(cut)}"`)
-    const edgeCuts = plan.cuts.filter((cut) =>
-      cut.points!.some((p) => Math.min(p.y, input.width - p.y) < 1e-7),
-    )
-    expect(edgeCuts.length).toBeGreaterThan(0)
-    for (const cut of edgeCuts) {
-      const points = getCutPoints(cut)
-      // A retained slit may start at an edge, but cannot sever the sheet by
-      // joining its two edges, or manufacture a closure along the perimeter.
-      expect(
-        [points[0], points.at(-1)!].filter((p) => Math.min(p.y, input.width - p.y) < 1e-7).length,
-      ).toBe(1)
-      for (let i = 1; i < points.length; i++) {
-        expect(points[i].y === 0 && points[i - 1].y === 0).toBe(false)
-        expect(points[i].y === input.width && points[i - 1].y === input.width).toBe(false)
+  it.each(overlaps)(
+    'overlap %s uses the same open curves in the preview, SVG and DXF',
+    (meanderOverlap) => {
+      const input = reference({ meanderOverlap }),
+        plan = createCutPlan(input)
+      const svg = exportSVG(input)
+      expect(svg).toContain('width="100mm" height="100mm"')
+      expect(svg.match(/ Z"/g)).toHaveLength(1)
+      for (const cut of plan.cuts) expect(svg).toContain(`d="${cutPathData(cut)}"`)
+      const edgeCuts = plan.cuts.filter((cut) =>
+        cut.points!.some((p) => Math.min(p.y, input.width - p.y) < 1e-7),
+      )
+      expect(edgeCuts.length).toBeGreaterThan(0)
+      for (const cut of edgeCuts) {
+        const points = getCutPoints(cut)
+        // A retained slit may start at an edge, but cannot sever the sheet by
+        // joining its two edges, or manufacture a closure along the perimeter.
+        expect(
+          [points[0], points.at(-1)!].filter((p) => Math.min(p.y, input.width - p.y) < 1e-7).length,
+        ).toBe(1)
+        for (let i = 1; i < points.length; i++) {
+          expect(points[i].y === 0 && points[i - 1].y === 0).toBe(false)
+          expect(points[i].y === input.width && points[i - 1].y === input.width).toBe(false)
+        }
       }
-    }
-    const dxf = exportDXF(input)
-    expect(dxf).toContain('$INSUNITS\n70\n4')
-    expect(dxf.match(/0\nLINE\n/g)).toHaveLength(
-      plan.cuts.reduce((sum, cut) => sum + getCutPoints(cut).length - 1, 0),
-    )
-  })
+      const dxf = exportDXF(input)
+      expect(dxf).toContain('$INSUNITS\n70\n4')
+      expect(dxf.match(/0\nLINE\n/g)).toHaveLength(
+        plan.cuts.reduce((sum, cut) => sum + getCutPoints(cut).length - 1, 0),
+      )
+    },
+  )
 
   it('keeps a curved boundary connected after both slit and perimeter kerfs are applied', () => {
     const input = reference({
-      pattern: 'meander-wide',
+      meanderOverlap: 0.08,
       outline: 'ellipse',
       width: 140,
       segments: [

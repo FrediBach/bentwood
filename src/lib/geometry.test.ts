@@ -366,19 +366,19 @@ describe('project import validation', () => {
     const migrated = validateDesign(legacy)
     expect(migrated).toEqual({ ...defaultDesign, name: 'Saved study' })
     expect(migrated).not.toHaveProperty('edgeMargin')
-    expect(migrated!.version).toBe(3)
+    expect(migrated!.version).toBe(4)
     const cuts = createCutPlan(migrated!).cuts
     expect(cuts[0].y1).toBe(0)
     expect(cuts.some((cut) => cut.y2 === migrated!.width)).toBe(true)
     expect(validateDesign({ ...legacy, edgeMargin: NaN })).toBeNull()
     const { edgeMargin: _unused, ...withoutMargin } = legacy
-    expect(validateDesign(withoutMargin)?.version).toBe(3)
+    expect(validateDesign(withoutMargin)?.version).toBe(4)
   })
   it.each([
     null,
     [],
     {},
-    { ...defaultDesign, version: 4 },
+    { ...defaultDesign, version: 5 },
     { ...defaultDesign, pattern: 'spiral' },
     { ...defaultDesign, pattern: undefined },
     { ...defaultDesign, width: NaN },

@@ -52,18 +52,18 @@ export function exportTestSwatchesSVG(design: Design): string {
   const hinges: string[] = []
   const outlines: string[] = []
   const labels: string[] = []
-  const meander = design.pattern === 'meander' || design.pattern === 'meander-wide'
+  const meander = design.pattern === 'meander'
+  const honeycomb = design.pattern === 'honeycomb'
   const bridgeLabel = meander ? 'end separation' : 'bridge size'
   const patternName =
-    design.pattern === 'small-wave'
-      ? 'Small waves'
-      : design.pattern === 'wave'
-        ? 'Wavy slits'
-        : design.pattern === 'meander'
-          ? 'Fine meander'
-          : design.pattern === 'meander-wide'
-            ? 'Wide meander'
-            : design.pattern[0].toUpperCase() + design.pattern.slice(1)
+    design.pattern === 'wave'
+      ? 'Wavy slits'
+      : design.pattern[0].toUpperCase() + design.pattern.slice(1)
+  const shapeSettings = honeycomb
+    ? `W: opening width ${number(design.honeycombWidth * 100)} percent of row pitch, R: roundness ${number(design.honeycombRoundness * 100)} percent.`
+    : meander
+      ? `O: end overlap ${number(design.meanderOverlap * 100)} percent of cut length.`
+      : ''
   const materialName = design.material[0].toUpperCase() + design.material.slice(1)
 
   for (let row = 0; row < 3; row++) {
@@ -115,6 +115,13 @@ export function exportTestSwatchesSVG(design: Design): string {
         `S ${number(spacing)} mm`,
         `${meander ? 'E' : 'B'} ${number(bridge)} mm`,
         `L ${number(design.cutLength)} mm`,
+        ...(honeycomb
+          ? [
+              `W ${number(design.honeycombWidth * 100)} %`,
+              `R ${number(design.honeycombRoundness * 100)} %`,
+            ]
+          : []),
+        ...(meander ? [`O ${number(design.meanderOverlap * 100)} %`] : []),
         materialName,
         `T ${number(design.thickness)} mm`,
         `K ${number(design.kerf)} mm`,
@@ -124,7 +131,7 @@ export function exportTestSwatchesSVG(design: Design): string {
           lines
             .map(
               (line, i) =>
-                `      <text x="${number(x + 3)}" y="${number(y + 7 + i * 5)}">${escapeXML(line)}</text>`,
+                `      <text x="${number(x + 3)}" y="${number(y + 7 + i * (honeycomb ? 4.5 : 5))}">${escapeXML(line)}</text>`,
             )
             .join('\n') +
           '\n    </g>',
@@ -134,7 +141,7 @@ export function exportTestSwatchesSVG(design: Design): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${number(width)}mm" height="${number(height)}mm" viewBox="0 0 ${number(width)} ${number(height)}">
   <title>${escapeXML(design.name)} — ${patternName} hinge test swatches</title>
-  <desc>Nine independent samples at 1:1 in millimetres. Columns vary cut spacing; rows vary ${bridgeLabel} by up to 20 percent, clamped to supported limits. S: spacing, ${meander ? 'E: transverse end separation' : 'B: bridge'}, L: cut length, T: thickness, K: nominal kerf. Red outer-contour and blue hinge-cuts are laser centre lines with no kerf compensation. Black engraving-labels are text for engraving, not cutting; assign operations in laser software and verify text before processing. Use the same material and grain direction as the final panel. Samples compare flexibility; they do not specify an achievable bend radius or strength.</desc>
+  <desc>Nine independent samples at 1:1 in millimetres. Columns vary cut spacing; rows vary ${bridgeLabel} by up to 20 percent, clamped to supported limits. S: spacing, ${meander ? 'E: transverse end separation' : 'B: bridge'}, L: cut length, T: thickness, K: nominal kerf. ${shapeSettings} Red outer-contour and blue hinge-cuts are laser centre lines with no kerf compensation. Black engraving-labels are text for engraving, not cutting; assign operations in laser software and verify text before processing. Use the same material and grain direction as the final panel. Samples compare flexibility; they do not specify an achievable bend radius or strength.</desc>
   <g id="hinge-cuts" fill="none" stroke="#0000ff" stroke-width="0.01">
 ${hinges.join('\n')}
   </g>

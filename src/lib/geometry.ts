@@ -1,6 +1,6 @@
 import type { CutLine, CutPlan, Design, PathSample, Point, Segment } from './types'
 import { cutPathData, cutPathLength, getCutPoints } from './cut-path'
-import { createCutoutLattice, smallWaveCell } from './cutout-lattice'
+import { createCutoutLattice } from './cutout-lattice'
 import { honeycombCell, honeycombClearance } from './honeycomb'
 import { createMeanderLattice, meanderCell, meanderClearance, meanderRepeat } from './meander'
 import {
@@ -59,7 +59,7 @@ export const presets: { id: string; name: string; description: string; segments:
 ]
 
 export const defaultDesign: Design = {
-  version: 3,
+  version: 4,
   name: 'Untitled form',
   segments: presets[0].segments.map((segment) => ({ ...segment })),
   outline: 'rectangle',
@@ -77,6 +77,9 @@ export const defaultDesign: Design = {
   cutLength: 24,
   kerf: 0.15,
   pattern: 'classic',
+  honeycombRoundness: 1,
+  honeycombWidth: 0.9375,
+  meanderOverlap: 0.160811,
 }
 
 export function segmentLength(segment: Segment): number {
@@ -304,28 +307,21 @@ export function createCutPlan(design: Design): CutPlan {
   if (pathOverlaps(design.segments))
     warnings.push('The bend path crosses itself. The assembled panel may collide.')
   const shaped = design.pattern === 'wave' || design.pattern === 'zigzag'
-  const meander = design.pattern === 'meander' || design.pattern === 'meander-wide'
+  const meander = design.pattern === 'meander'
   const motif = meander ? meanderCell(design) : undefined
-  const cell =
-    design.pattern === 'honeycomb'
-      ? honeycombCell(design)
-      : design.pattern === 'small-wave'
-        ? smallWaveCell(design)
-        : undefined
+  const cell = design.pattern === 'honeycomb' ? honeycombCell(design) : undefined
   const shape = patternShape(design)
   const minimumSpacing = meander
     ? meanderClearance(design, motif!)
     : design.pattern === 'honeycomb'
       ? honeycombClearance(design, cell!)
-      : design.pattern === 'small-wave'
-        ? design.spacing / 2
-        : shaped
-          ? (design.spacing - shape.amplitude) / Math.hypot(1, shape.slope)
-          : design.spacing
+      : shaped
+        ? (design.spacing - shape.amplitude) / Math.hypot(1, shape.slope)
+        : design.spacing
   if (minimumSpacing <= design.kerf || design.bridge <= design.kerf)
     warnings.push(
       meander
-        ? 'The laser kerf reaches a neighboring meander cut. Adjust spacing, end separation, or cut length before exporting.'
+        ? 'The laser kerf reaches a neighboring meander cut. Adjust spacing, end separation, cut length, or end overlap before exporting.'
         : 'The laser kerf is as wide as a ligament or bridge. Increase spacing or bridge size before exporting.',
     )
   const period = Math.max(0.5, meander ? meanderRepeat(design) : design.cutLength + design.bridge)
@@ -495,8 +491,8 @@ export function createExportPlan(design: Design) {
     throw new Error('Reduce the number of hinge cuts before exporting.')
   if (plan.warnings.some((warning) => warning.includes('laser kerf')))
     throw new Error(
-      design.pattern === 'meander' || design.pattern === 'meander-wide'
-        ? 'Adjust spacing, end separation, or cut length so the laser kerf leaves connected material before exporting.'
+      design.pattern === 'meander'
+        ? 'Adjust spacing, end separation, cut length, or end overlap so the laser kerf leaves connected material before exporting.'
         : 'Increase spacing or bridge size so the laser kerf leaves connected material before exporting.',
     )
   return plan
@@ -719,12 +715,22 @@ export function validateDesign(input: unknown): Design | null {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return null
   const value = input as Record<string, unknown>
   if (
-    (value.version !== 1 && value.version !== 2 && value.version !== 3) ||
+    (value.version !== 1 && value.version !== 2 && value.version !== 3 && value.version !== 4) ||
     typeof value.name !== 'string' ||
     value.name.length > 100 ||
     !Array.isArray(value.segments) ||
     value.segments.length < 1 ||
     value.segments.length > 50
+  )
+    return null
+  if (
+    value.version === 4 &&
+    (!['classic', 'graded', 'wave', 'zigzag', 'honeycomb', 'meander'].includes(
+      value.pattern as string,
+    ) ||
+      !inRange(value.honeycombRoundness, 0, 1) ||
+      !inRange(value.honeycombWidth, 0.1, 0.95) ||
+      !inRange(value.meanderOverlap, 0, 0.3))
   )
     return null
   // Legacy projects used a perimeter rail. Drop it on migration so saved designs
@@ -803,8 +809,19 @@ export function validateDesign(input: unknown): Design | null {
     customOutline.push({ x: point.x, y: point.y })
   }
   if (!isSimplePolygon(customOutline)) return null
+  // Version 3's named variants become parameter values in their shared family.
+  // Preserve all dimensional controls, including non-preset saved designs.
+  const legacyPattern = value.version === 3 ? value.pattern : 'classic'
+  const pattern =
+    value.version === 4
+      ? (value.pattern as Design['pattern'])
+      : legacyPattern === 'small-wave'
+        ? 'honeycomb'
+        : legacyPattern === 'meander-wide'
+          ? 'meander'
+          : (legacyPattern as Design['pattern'])
   const result: Design = {
-    version: 3,
+    version: 4,
     name: value.name,
     segments,
     outline: value.outline as Design['outline'],
@@ -816,12 +833,30 @@ export function validateDesign(input: unknown): Design | null {
     bridge: value.bridge,
     cutLength: value.cutLength,
     kerf: value.kerf,
-    pattern: value.version === 3 ? (value.pattern as Design['pattern']) : 'classic',
+    pattern,
+    honeycombRoundness:
+      value.version === 4
+        ? (value.honeycombRoundness as number)
+        : legacyPattern === 'small-wave'
+          ? 0
+          : 1,
+    honeycombWidth:
+      value.version === 4
+        ? (value.honeycombWidth as number)
+        : legacyPattern === 'small-wave'
+          ? 0.5
+          : 0.9375,
+    meanderOverlap:
+      value.version === 4
+        ? (value.meanderOverlap as number)
+        : legacyPattern === 'meander-wide'
+          ? 0.08
+          : 0.160811,
   }
   const curvedLength = segments
     .filter((segment) => segment.type === 'arc')
     .reduce((sum, segment) => sum + segmentLength(segment), 0)
-  const meander = result.pattern === 'meander' || result.pattern === 'meander-wide'
+  const meander = result.pattern === 'meander'
   const period = meander ? meanderRepeat(result) : result.cutLength + result.bridge
   if ((curvedLength / result.spacing) * (getPanelWidth(result) / period + 2) > 50000) return null
   if (result.pattern === 'wave' || result.pattern === 'zigzag') {

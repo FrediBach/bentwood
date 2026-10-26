@@ -16,10 +16,11 @@ function distanceSquared(p: Point, a: Point, b: Point): number {
   return (p.x - a.x - t * dx) ** 2 + (p.y - a.y - t * dy) ** 2
 }
 
-/** Fine retains the reference's overlapping tips. Wide reduces that overlap
- * while keeping the same rounded motif and transverse bridge dimension. */
+/** Overlap is a fraction of the slit's longitudinal extent. The former Fine
+ * and Wide patterns are presets at 16.0811% and 8%, with continuous values
+ * between them and a supported range of 0–30%. */
 export function meanderRepeat(design: Design): number {
-  return design.cutLength * (design.pattern === 'meander-wide' ? 0.92 : 0.839189)
+  return design.cutLength * (1 - design.meanderOverlap)
 }
 
 /** Trotec Kerf 4 uses separate open, eight-cubic motifs. Repeated motifs
@@ -71,7 +72,9 @@ export function meanderCell(design: Design): Point[] {
 
 /** Measure the actual sampled toolpaths: neighbouring bounding boxes overlap.
  * Include every potentially close row, since bridge can exceed row spacing.
- * Translation symmetry lets us inspect positive rows and one same-row repeat. */
+ * Translation symmetry lets us inspect positive rows and one same-row repeat.
+ * With at most 30% overlap, the period exceeds two thirds of the motif length,
+ * so more distant repeats cannot be closer than the -1/0/+1 repeats. */
 export function meanderClearance(design: Design, cell: Point[]): number {
   const period = meanderRepeat(design)
   const segments = cell.slice(1).map((b, i) => {
