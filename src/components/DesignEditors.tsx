@@ -240,6 +240,88 @@ function DimensionLines({
   )
 }
 
+function OutlinePointControls({
+  design,
+  selectedIndex,
+  selectedPoint,
+  length,
+  width,
+  custom,
+  updatePoint,
+  insertPoint,
+  removePoint,
+  onChange,
+}: {
+  design: Design
+  selectedIndex: number
+  selectedPoint: Point
+  length: number
+  width: number
+  custom: Point[]
+  updatePoint: (index: number, point: Point) => boolean
+  insertPoint: (index: number) => void
+  removePoint: (index: number) => void
+  onChange: (design: Design) => void
+}) {
+  return (
+    <div className="outline-tools">
+      <div className="vertex-controls">
+        <span className="vertex-label">
+          <MousePointer2 size={15} /> Point {selectedIndex + 1}
+        </span>
+        <CoordinateField
+          key={`x-${selectedIndex}`}
+          axis="X"
+          value={selectedPoint.x * length}
+          max={length}
+          onCommit={(value) => updatePoint(selectedIndex, { ...selectedPoint, x: value / length })}
+        />
+        <CoordinateField
+          key={`y-${selectedIndex}`}
+          axis="Y"
+          value={selectedPoint.y * width}
+          max={width}
+          onCommit={(value) => updatePoint(selectedIndex, { ...selectedPoint, y: value / width })}
+        />
+        <button
+          type="button"
+          className="editor-tool-button"
+          disabled={custom.length >= 128}
+          title={
+            custom.length >= 128
+              ? 'Maximum 128 points reached'
+              : 'Insert a point after the selected point'
+          }
+          onClick={() => insertPoint(selectedIndex)}
+        >
+          <Plus size={15} /> Add point
+        </button>
+        <button
+          type="button"
+          className="editor-tool-button editor-delete-point"
+          disabled={custom.length <= 3}
+          onClick={() => removePoint(selectedIndex)}
+          aria-label="Remove selected point"
+        >
+          <Trash2 size={15} />
+        </button>
+      </div>
+      <div className="corner-controls">
+        <CoordinateField
+          axis="Corner radius"
+          value={design.outlineCornerRadius}
+          max={1000}
+          onCommit={(value) => {
+            onChange({ ...design, outlineCornerRadius: value })
+            return true
+          }}
+        />
+        <span className="corner-hint">0 for sharp corners · Limited to fit</span>
+      </div>
+    </div>
+  )
+}
+
 export function OutlineEditor({
   design,
   onChange,
@@ -484,65 +566,18 @@ export function OutlineEditor({
         </svg>
       </div>
       {isCustom && selectedPoint ? (
-        <div className="outline-tools">
-          <div className="vertex-controls">
-            <span className="vertex-label">
-              <MousePointer2 size={15} /> Point {selectedIndex + 1}
-            </span>
-            <CoordinateField
-              key={`x-${selectedIndex}`}
-              axis="X"
-              value={selectedPoint.x * length}
-              max={length}
-              onCommit={(value) =>
-                updatePoint(selectedIndex, { ...selectedPoint, x: value / length })
-              }
-            />
-            <CoordinateField
-              key={`y-${selectedIndex}`}
-              axis="Y"
-              value={selectedPoint.y * width}
-              max={width}
-              onCommit={(value) =>
-                updatePoint(selectedIndex, { ...selectedPoint, y: value / width })
-              }
-            />
-            <button
-              type="button"
-              className="editor-tool-button"
-              disabled={custom.length >= 128}
-              title={
-                custom.length >= 128
-                  ? 'Maximum 128 points reached'
-                  : 'Insert a point after the selected point'
-              }
-              onClick={() => insertPoint(selectedIndex)}
-            >
-              <Plus size={15} /> Add point
-            </button>
-            <button
-              type="button"
-              className="editor-tool-button editor-delete-point"
-              disabled={custom.length <= 3}
-              onClick={() => removePoint(selectedIndex)}
-              aria-label="Remove selected point"
-            >
-              <Trash2 size={15} />
-            </button>
-          </div>
-          <div className="corner-controls">
-            <CoordinateField
-              axis="Corner radius"
-              value={design.outlineCornerRadius}
-              max={1000}
-              onCommit={(value) => {
-                onChange({ ...design, outlineCornerRadius: value })
-                return true
-              }}
-            />
-            <span className="corner-hint">0 for sharp corners · Limited to fit</span>
-          </div>
-        </div>
+        <OutlinePointControls
+          design={design}
+          selectedIndex={selectedIndex}
+          selectedPoint={selectedPoint}
+          length={length}
+          width={width}
+          custom={custom}
+          updatePoint={updatePoint}
+          insertPoint={insertPoint}
+          removePoint={removePoint}
+          onChange={onChange}
+        />
       ) : (
         <button
           type="button"

@@ -596,7 +596,7 @@ for (const pattern of [
     delete legacy.honeycombRoundness
     delete legacy.honeycombWidth
     delete legacy.meanderOverlap
-    await page.locator('input[type="file"]').setInputFiles({
+    await page.getByLabel('Import project file', { exact: true }).setInputFiles({
       name: 'legacy.bentwood.json',
       mimeType: 'application/json',
       buffer: Buffer.from(JSON.stringify(legacy)),
@@ -693,7 +693,7 @@ for (const pattern of [
     delete legacy.honeycombRoundness
     delete legacy.honeycombWidth
     delete legacy.meanderOverlap
-    await page.locator('input[type="file"]').setInputFiles({
+    await page.getByLabel('Import project file', { exact: true }).setInputFiles({
       name: 'legacy.bentwood.json',
       mimeType: 'application/json',
       buffer: Buffer.from(JSON.stringify(legacy)),

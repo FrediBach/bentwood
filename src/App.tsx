@@ -1,1332 +1,137 @@
-import BrandMark from './components/BrandMark'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import {
-  ArrowDownToLine,
-  ArrowRight,
-  Box,
-  Check,
-  ChevronDown,
-  Circle,
-  CircleHelp,
-  FileDown,
-  FolderOpen,
-  Grid2X2,
-  Layers3,
-  Maximize,
-  Minus,
-  MousePointer2,
-  MoveUpRight,
-  Plus,
-  Redo2,
-  RotateCcw,
-  Ruler,
-  Scissors,
-  Settings2,
-  Shapes,
-  Sparkles,
-  Square,
-  Triangle,
-  Undo2,
-  Upload,
-  Waves,
-  X,
-} from 'lucide-react'
-import * as Tabs from '@radix-ui/react-tabs'
-import { Button } from './components/ui/button'
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from './components/ui/dialog'
-import { Tooltip, TooltipProvider } from './components/ui/tooltip'
-import PlywoodPreview from './components/PlywoodPreview'
-import { BendPathEditor, CutPlanView, OutlineEditor } from './components/DesignEditors'
-import {
-  createCutPlan,
-  defaultDesign,
-  exportDXF,
-  exportSVG,
-  getPanelWidth,
-  pathLength,
-  presets,
-  segmentLength,
-  validateDesign,
-} from './lib/geometry'
-import type { Design, OutlineKind, Segment } from './lib/types'
-import { exportTestSwatchesSVG, getTestSwatchSheetSize } from './lib/test-swatches'
-import { meanderCell, meanderRepeat } from './lib/meander'
-import { honeycombCell } from './lib/honeycomb'
-import { familyPresets } from './lib/pattern-presets'
-
-type View = 'preview' | 'outline' | 'plan'
-// Keep the original storage key so validation can migrate existing projects in place.
-const storageKey = 'bentwood.design.v1'
-const hingePatterns: { value: Design['pattern']; label: string; description: string }[] = [
-  {
-    value: 'classic',
-    label: 'Classic',
-    description: 'Straight staggered cuts, evenly spaced along each curve.',
-  },
-  {
-    value: 'graded',
-    label: 'Graded',
-    description:
-      'Gentler curves use up to 2× wider spacing. A single radius looks like Classic; your cut spacing applies to the tightest curve.',
-  },
-  {
-    value: 'wave',
-    label: 'Wavy slits',
-    description:
-      'Undulating cuts for a flowing texture. Test a swatch to find the right flexibility.',
-  },
-  {
-    value: 'zigzag',
-    label: 'Zigzag',
-    description:
-      'Angular cuts for a geometric texture. Test a swatch to find the right flexibility.',
-  },
-  {
-    value: 'honeycomb',
-    label: 'Honeycomb',
-    description:
-      'Staggered openings run across the sheet width. Adjust their width and roundness from slender diamonds to curved honeycombs.',
-  },
-  {
-    value: 'meander',
-    label: 'Meander',
-    description:
-      'Rounded slits retain material between their overlapping ends. Adjust the overlap and dimensions for fine, wide, or intermediate textures.',
-  },
-]
-
-function PatternDrawing({ pattern }: { pattern: Design['pattern'] }) {
-  if (pattern === 'meander') {
-    const miniature = {
-      ...defaultDesign,
-      pattern,
-      ...familyPresets.meander[0].settings,
-    }
-    const cell = meanderCell(miniature)
-    const scale = 1.45
-    const repeat = meanderRepeat(miniature) * scale
-    return (
-      <svg viewBox="0 0 64 32" aria-hidden="true" focusable="false">
-        {Array.from({ length: 8 }, (_, row) =>
-          Array.from({ length: 4 }, (_, column) => (
-            <polyline
-              key={`${row}-${column}`}
-              points={cell
-                .map(
-                  (p) =>
-                    `${p.y * scale + (column - 1) * repeat},${p.x * scale + row * miniature.spacing * scale}`,
-                )
-                .join(' ')}
-              strokeWidth={0.65}
-            />
-          )),
-        )}
-      </svg>
-    )
-  }
-  if (pattern === 'honeycomb') {
-    const miniature = { ...defaultDesign, ...familyPresets.honeycomb[1].settings }
-    const cell = honeycombCell(miniature)
-    const scale = 1.4
-    const repeat = (miniature.cutLength + miniature.bridge) * scale
-    return (
-      <svg viewBox="0 0 64 32" aria-hidden="true" focusable="false">
-        {Array.from({ length: 9 }, (_, row) =>
-          Array.from({ length: 3 }, (_, column) => {
-            const x = 16 + (column - 1) * repeat + (row % 2 ? repeat / 2 : 0)
-            const y = 2 + row * miniature.spacing * scale
-            return (
-              <polygon
-                key={`${row}-${column}`}
-                points={cell.map((p) => `${x + p.y * scale},${y + p.x * scale}`).join(' ')}
-                strokeWidth={0.6}
-              />
-            )
-          }),
-        )}
-      </svg>
-    )
-  }
-  const columns = pattern === 'graded' ? [8, 16, 26, 39, 55] : [8, 20, 32, 44, 56]
-  return (
-    <svg viewBox="0 0 64 32" aria-hidden="true" focusable="false">
-      {columns.flatMap((x, column) => {
-        const ranges =
-          column % 2
-            ? [
-                [0, 6],
-                [10, 22],
-                [26, 32],
-              ]
-            : [
-                [0, 14],
-                [18, 32],
-              ]
-        return ranges.map(([start, end], index) => {
-          const points = Array.from({ length: end - start + 1 }, (_, step) => {
-            const y = start + step
-            const phase = y / 12
-            const offset =
-              pattern === 'wave'
-                ? Math.sin(phase * Math.PI * 2) * 2.5
-                : pattern === 'zigzag'
-                  ? (1 - 4 * Math.abs((phase % 1) - 0.5)) * 2.5
-                  : 0
-            return `${x + offset},${y}`
-          })
-          return <polyline key={`${column}-${index}`} points={points.join(' ')} />
-        })
-      })}
-    </svg>
-  )
-}
-
-function loadDesign() {
-  try {
-    const stored = localStorage.getItem(storageKey)
-    return stored ? (validateDesign(JSON.parse(stored)) ?? defaultDesign) : defaultDesign
-  } catch {
-    return defaultDesign
-  }
-}
-function download(content: string, filename: string, type: string) {
-  const url = URL.createObjectURL(new Blob([content], { type }))
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
-}
-function NumberField({
-  label,
-  value,
-  onChange,
-  min = 1,
-  max = 2000,
-  step = 1,
-  unit = 'mm',
-  compact = false,
-  precision = 2,
-}: {
-  label: string
-  value: number
-  onChange: (v: number) => void
-  min?: number
-  max?: number
-  step?: number
-  unit?: string
-  compact?: boolean
-  precision?: number
-}) {
-  const [text, setText] = useState(String(value))
-  const edited = useRef(false)
-  useEffect(() => {
-    edited.current = false
-    setText(String(Number(value.toFixed(precision))))
-  }, [value, precision])
-  function commit() {
-    // Display rounding must not alter an imported value merely by focusing it.
-    if (!edited.current) return
-    edited.current = false
-    const number = Number(text)
-    if (text.trim() && Number.isFinite(number)) {
-      const clamped = Math.max(min, Math.min(max, number))
-      setText(String(clamped))
-      onChange(clamped)
-    } else setText(String(value))
-  }
-  return (
-    <label className={`number-field ${compact ? 'compact' : ''}`}>
-      <span>{label}</span>
-      <div>
-        <input
-          type="number"
-          min={min}
-          max={max}
-          step={step}
-          value={text}
-          onChange={(e) => {
-            edited.current = true
-            setText(e.target.value)
-          }}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') e.currentTarget.blur()
-          }}
-        />
-        <span className="input-unit">{unit}</span>
-      </div>
-    </label>
-  )
-}
-function PercentageField({
-  label,
-  value,
-  onChange,
-  min = 0,
-  max = 100,
-  hint,
-}: {
-  label: string
-  value: number
-  onChange: (value: number) => void
-  min?: number
-  max?: number
-  hint: string
-}) {
-  const percentage = Number((value * 100).toFixed(4))
-  return (
-    <div className="percentage-field">
-      <NumberField
-        label={label}
-        value={percentage}
-        onChange={(next) => onChange(next / 100)}
-        min={min}
-        max={max}
-        step={0.01}
-        unit="%"
-        precision={4}
-      />
-      <input
-        type="range"
-        aria-label={`${label} adjustment`}
-        min={min}
-        max={max}
-        step={0.01}
-        value={percentage}
-        onPointerDown={(event) => event.currentTarget.setPointerCapture(event.pointerId)}
-        onChange={(event) => onChange(Number(event.target.value) / 100)}
-      />
-      <p className="control-hint">{hint}</p>
-    </div>
-  )
-}
-function IconButton({
-  label,
-  children,
-  onClick,
-  disabled = false,
-  active = false,
-}: {
-  label: string
-  children: ReactNode
-  onClick: () => void
-  disabled?: boolean
-  active?: boolean
-}) {
-  return (
-    <Tooltip label={label}>
-      <Button
-        variant="ghost"
-        size="icon"
-        aria-label={label}
-        disabled={disabled}
-        aria-pressed={active || undefined}
-        onClick={onClick}
-        className={active ? 'is-active' : ''}
-      >
-        {children}
-      </Button>
-    </Tooltip>
-  )
-}
-function PresetDrawing({ segments }: { segments: Segment[] }) {
-  const points: { x: number; y: number }[] = []
-  let x = 0,
-    y = 0,
-    a = 0
-  for (const s of segments) {
-    const n = s.type === 'arc' ? 30 : 1
-    for (let i = 0; i < n; i++) {
-      const l = segmentLength(s) / n
-      const da = s.type === 'arc' ? (s.angle * Math.PI) / 180 / n : 0
-      if (da !== 0) {
-        x += (l / da) * (Math.sin(a + da) - Math.sin(a))
-        y += (l / da) * (-Math.cos(a + da) + Math.cos(a))
-      } else {
-        x += l * Math.cos(a)
-        y += l * Math.sin(a)
-      }
-      a += da
-      points.push({ x, y })
-    }
-  }
-  points.unshift({ x: 0, y: 0 })
-  const minX = Math.min(...points.map((p) => p.x)),
-    maxX = Math.max(...points.map((p) => p.x)),
-    minY = Math.min(...points.map((p) => p.y)),
-    maxY = Math.max(...points.map((p) => p.y))
-  return (
-    <svg
-      viewBox={`${minX - 20} ${minY - 20} ${maxX - minX + 40} ${maxY - minY + 40}`}
-      aria-hidden="true"
-    >
-      <polyline
-        points={points.map((p) => `${p.x},${p.y}`).join(' ')}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="3"
-        vectorEffect="non-scaling-stroke"
-        strokeLinecap="round"
-      />
-    </svg>
-  )
-}
-
+import { Check, X } from 'lucide-react'
+import { DesignSidebar } from './components/studio/DesignSidebar'
+import { ProjectInputs } from './components/studio/ProjectInputs'
+import { SettingsSidebar } from './components/studio/SettingsSidebar'
+import { StudioCanvas } from './components/studio/StudioCanvas'
+import { StudioDialogs } from './components/studio/StudioDialogs'
+import { StudioNavigation } from './components/studio/StudioNavigation'
+import { TooltipProvider } from './components/ui/tooltip'
+import { useStudio } from './hooks/useStudio'
 export default function App() {
-  const [history, setHistory] = useState(() => ({
-    past: [] as Design[],
-    present: loadDesign(),
-    future: [] as Design[],
-  }))
-  const design = history.present
-  const [view, setView] = useState<View>('preview')
-  const [selectedId, setSelectedId] = useState<string | null>(
-    () => design.segments.find((s) => s.type === 'arc')?.id ?? design.segments[0].id,
-  )
-  const [panel, setPanel] = useState<'path' | 'outline'>('path')
-  const [bend, setBend] = useState(1)
-  const [showGrid, setShowGrid] = useState(true)
-  const [showCuts, setShowCuts] = useState(true)
-  const [camera, setCamera] = useState<'perspective' | 'top' | 'front'>('perspective')
-  const [resetKey, setResetKey] = useState(0)
-  const [exportOpen, setExportOpen] = useState(false)
-  const [helpOpen, setHelpOpen] = useState(false)
-  const [mobilePanel, setMobilePanel] = useState<'design' | 'studio' | 'settings'>('studio')
-  const [notice, setNotice] = useState('')
-  const [saved, setSaved] = useState(true)
-  const fileInput = useRef<HTMLInputElement>(null)
-  const svgInput = useRef<HTMLInputElement>(null)
-  const [importingSVG, setImportingSVG] = useState(false)
-  const svgImportRequest = useRef(0)
-  const currentDesign = useRef(design)
-  useEffect(() => {
-    currentDesign.current = design
-  }, [design])
-  const pointerHistory = useRef({ active: false, recorded: false })
-  const plan = useMemo(() => createCutPlan(design), [design])
-  const swatchSize = useMemo(() => getTestSwatchSheetSize(design), [design])
-  const isMeander = design.pattern === 'meander'
-  const patternPresets =
-    design.pattern === 'honeycomb' || design.pattern === 'meander'
-      ? familyPresets[design.pattern]
-      : null
-  const selected = design.segments.find((s) => s.id === selectedId)
-  const total = pathLength(design.segments)
-  const filename = (design.name.trim() || 'bentwood-design')
-    .replace(/[^a-z0-9-]+/gi, '-')
-    .toLowerCase()
-  function update(next: Design) {
-    if (JSON.stringify(next) === JSON.stringify(design)) return
-    if (!validateDesign(next)) {
-      setNotice(
-        'This design exceeds the supported size or cut density. Reduce dimensions or increase cut spacing.',
-      )
-      return
-    }
-    const group = pointerHistory.current.active && pointerHistory.current.recorded
-    if (pointerHistory.current.active) pointerHistory.current.recorded = true
-    setHistory((h) =>
-      JSON.stringify(next) === JSON.stringify(h.present)
-        ? h
-        : { past: group ? h.past : [...h.past, h.present].slice(-100), present: next, future: [] },
-    )
-  }
-  function patch(next: Partial<Design>) {
-    update({ ...design, ...next })
-  }
-  function undo() {
-    setHistory((h) =>
-      h.past.length
-        ? { past: h.past.slice(0, -1), present: h.past.at(-1)!, future: [h.present, ...h.future] }
-        : h,
-    )
-  }
-  function redo() {
-    setHistory((h) =>
-      h.future.length
-        ? { past: [...h.past, h.present], present: h.future[0], future: h.future.slice(1) }
-        : h,
-    )
-  }
-  useEffect(() => {
-    const finishPointerEdit = () => {
-      pointerHistory.current.active = false
-    }
-    window.addEventListener('pointerup', finishPointerEdit)
-    window.addEventListener('pointercancel', finishPointerEdit)
-    window.addEventListener('blur', finishPointerEdit)
-    return () => {
-      window.removeEventListener('pointerup', finishPointerEdit)
-      window.removeEventListener('pointercancel', finishPointerEdit)
-      window.removeEventListener('blur', finishPointerEdit)
-    }
-  }, [])
-  function saveProject() {
-    download(JSON.stringify(design, null, 2), `${filename}.bentwood.json`, 'application/json')
-    setNotice('Project file downloaded.')
-  }
-  useEffect(() => {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify(design))
-      setSaved(true)
-    } catch {
-      setSaved(false)
-    }
-  }, [design])
-  useEffect(() => {
-    if (!notice) return
-    const timer = setTimeout(() => setNotice(''), 5000)
-    return () => clearTimeout(timer)
-  }, [notice])
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey)) return
-      if (e.key === 's') {
-        e.preventDefault()
-        saveProject()
-      }
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
-      if (e.key === 'z') {
-        e.preventDefault()
-        if (e.shiftKey) redo()
-        else undo()
-      }
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  })
-  function changeSegment(values: Partial<Segment>) {
-    patch({
-      segments: design.segments.map((s) =>
-        s.id === selectedId ? ({ ...s, ...values } as Segment) : s,
-      ),
-    })
-  }
-  function addSegment(type: 'straight' | 'arc') {
-    const id = crypto.randomUUID()
-    patch({
-      segments: [
-        ...design.segments,
-        type === 'straight' ? { id, type, length: 60 } : { id, type, radius: 40, angle: 90 },
-      ],
-    })
-    setSelectedId(id)
-  }
-  function usePreset(p: (typeof presets)[number]) {
-    patch({ segments: p.segments.map((s) => ({ ...s, id: crypto.randomUUID() })) })
-    setSelectedId(null)
-    setBend(1)
-    setResetKey((k) => k + 1)
-  }
-  function shape(kind: OutlineKind) {
-    patch({ outline: kind })
-    setPanel('outline')
-    if (kind === 'custom') setView('outline')
-  }
-  async function importOutline(file: File) {
-    const request = ++svgImportRequest.current
-    setImportingSVG(true)
-    try {
-      if (file.size > 1024 * 1024) throw new Error('Choose an SVG file smaller than 1 MB.')
-      const [source, { importSVGOutline }] = await Promise.all([
-        file.text(),
-        import('./lib/svg-outline'),
-      ])
-      const previous = currentDesign.current
-      const result = await importSVGOutline(source, pathLength(previous.segments))
-      if (request !== svgImportRequest.current) return
-      if (previous !== currentDesign.current)
-        throw new Error('The design changed during import. Please import the SVG again.')
-      const next: Design = {
-        ...previous,
-        outline: 'custom',
-        customOutline: result.points,
-        width: result.width,
-        outlineCornerRadius: 0,
-      }
-      if (!validateDesign(next))
-        throw new Error(
-          'This outline exceeds the supported panel size or cut density. Shorten the bend path or increase cut spacing, then import again.',
-        )
-      update(next)
-      setPanel('outline')
-      setView('outline')
-      setMobilePanel('studio')
-      setResetKey((key) => key + 1)
-      setNotice(
-        `SVG outline imported. Scaled to ${pathLength(next.segments).toFixed(1)} × ${next.width.toFixed(1)} mm, with proportions preserved.${result.warning ? ` ${result.warning}` : ''}`,
-      )
-    } catch (error) {
-      if (request === svgImportRequest.current)
-        setNotice(
-          error instanceof Error ? error.message : 'This SVG outline could not be imported.',
-        )
-    } finally {
-      if (request === svgImportRequest.current) setImportingSVG(false)
-    }
-  }
-  function exportFile(format: 'svg' | 'dxf') {
-    try {
-      download(
-        format === 'svg' ? exportSVG(design) : exportDXF(design),
-        `${filename}.${format}`,
-        format === 'svg' ? 'image/svg+xml' : 'application/dxf',
-      )
-      setNotice(`${format.toUpperCase()} cut plan downloaded at 1:1 scale.`)
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'The cut plan could not be exported.')
-    }
-  }
-  function exportTestSwatches() {
-    try {
-      download(
-        exportTestSwatchesSVG(design),
-        `${filename}-${design.pattern}-test-swatches.svg`,
-        'image/svg+xml',
-      )
-      setNotice(
-        'Test swatches downloaded at 1:1 scale. Set the labels layer to engrave in your laser software.',
-      )
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'The test swatches could not be exported.')
-    }
-  }
-  const shapeOptions: { kind: OutlineKind; label: string; icon: ReactNode }[] = [
-    {
-      kind: 'rectangle',
-      label: 'Rectangle',
-      icon: <Square size={20} className="rectangle-icon" />,
-    },
-    { kind: 'square', label: 'Square', icon: <Square size={20} /> },
-    { kind: 'ellipse', label: 'Ellipse', icon: <Circle size={20} className="rectangle-icon" /> },
-    { kind: 'circle', label: 'Circle', icon: <Circle size={20} /> },
-    { kind: 'triangle', label: 'Triangle', icon: <Triangle size={20} /> },
-    { kind: 'custom', label: 'Custom', icon: <Shapes size={20} /> },
-  ]
+  const {
+    history,
+    design,
+    view,
+    setView,
+    selectedId,
+    setSelectedId,
+    panel,
+    setPanel,
+    bend,
+    setBend,
+    showGrid,
+    setShowGrid,
+    showCuts,
+    setShowCuts,
+    camera,
+    setCamera,
+    resetKey,
+    setResetKey,
+    exportOpen,
+    setExportOpen,
+    helpOpen,
+    setHelpOpen,
+    mobilePanel,
+    setMobilePanel,
+    notice,
+    setNotice,
+    saved,
+    fileInput,
+    svgInput,
+    importingSVG,
+    pointerHistory,
+    plan,
+    swatchSize,
+    isMeander,
+    patternPresets,
+    selected,
+    total,
+    update,
+    patch,
+    undo,
+    redo,
+    saveProject,
+    changeSegment,
+    addSegment,
+    applyPreset,
+    shape,
+    importOutline,
+    exportFile,
+    exportTestSwatches,
+  } = useStudio()
   return (
     <TooltipProvider delayDuration={250}>
       <div className="app-shell">
-        <header className="app-header">
-          <a className="brand" href="/" aria-label="Bentwood home">
-            <BrandMark />
-            <span>
-              bentwood<span className="brand-period">.</span>
-            </span>
-          </a>
-          <span className="header-divider" />
-          <div className="project-name">
-            <input
-              aria-label="Project name"
-              value={design.name}
-              maxLength={60}
-              onChange={(e) => patch({ name: e.target.value })}
-            />
-            <span className="save-state">
-              <span className={saved ? 'status-dot' : 'status-dot unsaved'} />
-              {saved ? 'Saved on this device' : 'Download to save'}
-            </span>
-          </div>
-          <div className="header-actions">
-            <div className="history-actions">
-              <IconButton label="Undo (⌘ / Ctrl Z)" onClick={undo} disabled={!history.past.length}>
-                <Undo2 size={18} />
-              </IconButton>
-              <IconButton
-                label="Redo (⌘ / Ctrl Shift Z)"
-                onClick={redo}
-                disabled={!history.future.length}
-              >
-                <Redo2 size={18} />
-              </IconButton>
-            </div>
-            <IconButton label="Open project" onClick={() => fileInput.current?.click()}>
-              <FolderOpen size={18} />
-            </IconButton>
-            <IconButton label="Save project file" onClick={saveProject}>
-              <FileDown size={18} />
-            </IconButton>
-            <Button variant="ghost" onClick={() => setHelpOpen(true)} className="help-button">
-              <CircleHelp size={17} />
-              <span>Quick guide</span>
-            </Button>
-            <Button onClick={() => setExportOpen(true)} className="export-button">
-              <ArrowDownToLine size={16} />
-              <span>Export cut plan</span>
-              <ArrowRight size={16} />
-            </Button>
-          </div>
-        </header>
-        <div className="workspace-heading">
-          <div className="studio-label">
-            <span className="tiny-cross">✳</span> THE BENDING STUDIO
-          </div>
-          <nav className="view-tabs" aria-label="Workspace view">
-            {(
-              [
-                { id: 'preview', label: '3D preview', icon: <Box size={16} /> },
-                { id: 'outline', label: 'Flat outline', icon: <Shapes size={16} /> },
-                { id: 'plan', label: 'Cut plan', icon: <Scissors size={16} /> },
-              ] as const
-            ).map((v) => (
-              <button
-                key={v.id}
-                onClick={() => {
-                  setView(v.id)
-                  setMobilePanel('studio')
-                  if (v.id === 'outline') setPanel('outline')
-                }}
-                className={view === v.id ? 'active' : ''}
-                aria-pressed={view === v.id}
-              >
-                {v.icon}
-                {v.label}
-              </button>
-            ))}
-          </nav>
-          <span className="unit-badge">
-            <Ruler size={14} /> Millimetres
-          </span>
-        </div>
-        <nav className="mobile-nav" aria-label="Panels">
-          <button
-            className={mobilePanel === 'design' ? 'active' : ''}
-            aria-pressed={mobilePanel === 'design'}
-            onClick={() => setMobilePanel('design')}
-          >
-            Design
-          </button>
-          <button
-            className={mobilePanel === 'studio' ? 'active' : ''}
-            aria-pressed={mobilePanel === 'studio'}
-            onClick={() => setMobilePanel('studio')}
-          >
-            Studio
-          </button>
-          <button
-            className={mobilePanel === 'settings' ? 'active' : ''}
-            aria-pressed={mobilePanel === 'settings'}
-            onClick={() => setMobilePanel('settings')}
-          >
-            Material & cuts
-          </button>
-        </nav>
+        <StudioNavigation
+          design={design}
+          patch={patch}
+          saved={saved}
+          undo={undo}
+          history={history}
+          redo={redo}
+          fileInput={fileInput}
+          saveProject={saveProject}
+          setHelpOpen={setHelpOpen}
+          setExportOpen={setExportOpen}
+          setView={setView}
+          setMobilePanel={setMobilePanel}
+          setPanel={setPanel}
+          view={view}
+          mobilePanel={mobilePanel}
+        />
         <main className={`workspace mobile-${mobilePanel}`}>
-          <aside className="design-sidebar" aria-label="Shape designer">
-            <div className="sidebar-intro">
-              <p className="eyebrow">FROM FLAT TO FORM</p>
-              <h1>Bend your idea.</h1>
-              <p>A simple path. A world of possibilities.</p>
-            </div>
-            <Tabs.Root value={panel} onValueChange={(v) => setPanel(v as 'path' | 'outline')}>
-              <Tabs.List className="segment-tabs" aria-label="Design controls">
-                <Tabs.Trigger value="path">
-                  <Waves size={16} />
-                  Bend path
-                </Tabs.Trigger>
-                <Tabs.Trigger value="outline">
-                  <Shapes size={16} />
-                  Panel outline
-                </Tabs.Trigger>
-              </Tabs.List>
-              <Tabs.Content value="path" className="path-controls">
-                <div className="section-label">
-                  <span>YOUR PATH</span>
-                  <span>{design.segments.length} segments</span>
-                </div>
-                <div className="path-editor-frame">
-                  <BendPathEditor
-                    design={design}
-                    selectedId={selectedId}
-                    onSelect={setSelectedId}
-                    onChange={update}
-                  />
-                  <span className="diagram-caption">TOP VIEW · SELECT A SEGMENT</span>
-                </div>
-                <div className="segments-list">
-                  {design.segments.map((s, i) => (
-                    <button
-                      className={`segment-row ${s.id === selectedId ? 'selected' : ''}`}
-                      key={s.id}
-                      onClick={() => setSelectedId(s.id)}
-                      aria-pressed={s.id === selectedId}
-                    >
-                      <span className="segment-number">{String(i + 1).padStart(2, '0')}</span>
-                      {s.type === 'arc' ? <Waves size={17} /> : <Minus size={17} />}
-                      <span>{s.type === 'arc' ? 'Curve' : 'Straight'}</span>
-                      <span className="segment-value">
-                        {s.type === 'arc' ? `${s.angle}°` : `${s.length} mm`}
-                      </span>
-                    </button>
-                  ))}
-                </div>
-                <div className="add-segments">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => addSegment('straight')}
-                    disabled={design.segments.length >= 20}
-                  >
-                    <Plus size={14} />
-                    Straight
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => addSegment('arc')}
-                    disabled={design.segments.length >= 20}
-                  >
-                    <Plus size={14} />
-                    Curve
-                  </Button>
-                </div>
-                {selected ? (
-                  <div className="segment-properties">
-                    <div className="section-label">
-                      <span>{selected.type === 'arc' ? 'CURVE' : 'STRAIGHT'} SETTINGS</span>
-                      <IconButton
-                        label="Remove selected segment"
-                        disabled={design.segments.length === 1}
-                        onClick={() => {
-                          patch({ segments: design.segments.filter((s) => s.id !== selectedId) })
-                          setSelectedId(null)
-                        }}
-                      >
-                        <X size={14} />
-                      </IconButton>
-                    </div>
-                    {selected.type === 'straight' ? (
-                      <NumberField
-                        label="Length"
-                        value={selected.length}
-                        onChange={(v) => changeSegment({ length: v })}
-                        min={5}
-                        max={1000}
-                      />
-                    ) : (
-                      <>
-                        <div className="field-row">
-                          <NumberField
-                            label="Radius"
-                            value={selected.radius}
-                            onChange={(v) => changeSegment({ radius: v })}
-                            min={5}
-                            max={500}
-                          />
-                          <NumberField
-                            label="Angle"
-                            value={Math.abs(selected.angle)}
-                            onChange={(v) =>
-                              changeSegment({ angle: v * Math.sign(selected.angle || 1) })
-                            }
-                            min={1}
-                            max={270}
-                            unit="°"
-                          />
-                        </div>
-                        <div className="direction-control">
-                          <span>Bend direction</span>
-                          <button
-                            aria-label="Reverse bend direction"
-                            onClick={() => changeSegment({ angle: -selected.angle })}
-                          >
-                            <RotateCcw size={14} />
-                            {selected.angle > 0 ? 'Left' : 'Right'}
-                          </button>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                ) : (
-                  <p className="control-hint">Select a segment above to adjust its dimensions.</p>
-                )}
-                <div className="path-total">
-                  <span>Unrolled length</span>
-                  <strong>
-                    {total.toFixed(1)}
-                    <small> mm</small>
-                  </strong>
-                </div>
-              </Tabs.Content>
-              <Tabs.Content value="outline" className="outline-controls">
-                <div className="section-label">
-                  <span>START WITH A SHAPE</span>
-                </div>
-                <div className="shape-options">
-                  {shapeOptions.map((s) => (
-                    <button
-                      key={s.kind}
-                      onClick={() => shape(s.kind)}
-                      aria-pressed={design.outline === s.kind}
-                      className={design.outline === s.kind ? 'selected' : ''}
-                    >
-                      {s.icon}
-                      <span>{s.label}</span>
-                    </button>
-                  ))}
-                </div>
-                <Button
-                  variant="outline"
-                  className="full-width"
-                  disabled={importingSVG}
-                  onClick={() => svgInput.current?.click()}
-                  aria-label="Import SVG outline"
-                >
-                  <Upload size={15} />
-                  {importingSVG ? 'Importing SVG…' : 'Import SVG outline'}
-                </Button>
-                <p className="control-hint">
-                  One closed outline, without holes. Scaled to bend-path length with proportions
-                  preserved.
-                </p>
-                <NumberField
-                  label="Panel width"
-                  value={getPanelWidth(design)}
-                  onChange={(v) =>
-                    patch({
-                      width: v,
-                      outline:
-                        design.outline === 'circle'
-                          ? 'ellipse'
-                          : design.outline === 'square'
-                            ? 'rectangle'
-                            : design.outline,
-                    })
-                  }
-                  min={10}
-                  max={1000}
-                />
-                <div className="dimension-note">
-                  <Ruler size={17} />
-                  <p>
-                    Length follows your bend path.
-                    <br />
-                    <strong>
-                      {total.toFixed(1)} × {getPanelWidth(design).toFixed(1)} mm
-                    </strong>
-                  </p>
-                </div>
-                <Button
-                  variant="outline"
-                  className="full-width"
-                  onClick={() => {
-                    setView('outline')
-                    setMobilePanel('studio')
-                  }}
-                >
-                  <MousePointer2 size={15} />
-                  Edit flat outline
-                  <MoveUpRight size={14} />
-                </Button>
-                {design.outline === 'custom' && (
-                  <p className="control-hint">
-                    Drag points, double-click an edge to add a point, or use the coordinate fields
-                    in the outline view.
-                  </p>
-                )}
-                <div className="quiet-note">
-                  <Layers3 size={20} />
-                  <p>
-                    One continuous sheet.
-                    <br />
-                    Your outline wraps along the bend path without changing its length.
-                  </p>
-                </div>
-              </Tabs.Content>
-            </Tabs.Root>
-            <div className="sidebar-bottom">
-              <span className="small-dot" />
-              <span>Designed to make things.</span>
-            </div>
-          </aside>
-          <section className="studio-canvas" aria-label="Design workspace">
-            <div
-              className="viewport"
-              onPointerDownCapture={() => {
-                pointerHistory.current = { active: true, recorded: false }
-              }}
-              onPointerUpCapture={() => {
-                pointerHistory.current.active = false
-              }}
-              onPointerCancelCapture={() => {
-                pointerHistory.current.active = false
-              }}
-            >
-              <div className="viewport-title">
-                <span className="eyebrow">
-                  {view === 'preview'
-                    ? 'A NEW PERSPECTIVE'
-                    : view === 'outline'
-                      ? 'MAKE IT YOUR OWN'
-                      : 'READY FOR THE WORKSHOP'}
-                </span>
-                <h2>
-                  {view === 'preview'
-                    ? 'Flat wood. New possibilities.'
-                    : view === 'outline'
-                      ? 'Every shape starts here.'
-                      : 'Every cut, considered.'}
-                </h2>
-              </div>
-              {view === 'preview' ? (
-                <PlywoodPreview
-                  design={design}
-                  plan={plan}
-                  bend={bend}
-                  showGrid={showGrid}
-                  showCuts={showCuts}
-                  view={camera}
-                  resetKey={resetKey}
-                />
-              ) : view === 'outline' ? (
-                <OutlineEditor
-                  design={design}
-                  onChange={update}
-                  onImportSVG={() => svgInput.current?.click()}
-                  importingSVG={importingSVG}
-                />
-              ) : (
-                <CutPlanView design={design} plan={plan} large />
-              )}
-              {view === 'preview' && (
-                <>
-                  <div className="canvas-tools">
-                    <IconButton label="Reset camera" onClick={() => setResetKey((k) => k + 1)}>
-                      <Maximize size={17} />
-                    </IconButton>
-                    <IconButton
-                      label="Toggle ground grid"
-                      onClick={() => setShowGrid((v) => !v)}
-                      active={showGrid}
-                    >
-                      <Grid2X2 size={17} />
-                    </IconButton>
-                    <IconButton
-                      label="Toggle cut visualization"
-                      onClick={() => setShowCuts((v) => !v)}
-                      active={showCuts}
-                    >
-                      <Scissors size={17} />
-                    </IconButton>
-                    <span className="tool-divider" />
-                    <label className="camera-select">
-                      <span className="sr-only">Camera view</span>
-                      <select
-                        value={camera}
-                        onChange={(e) => setCamera(e.target.value as typeof camera)}
-                      >
-                        <option value="perspective">Perspective</option>
-                        <option value="top">Top</option>
-                        <option value="front">Front</option>
-                      </select>
-                      <ChevronDown size={13} />
-                    </label>
-                  </div>
-                  <div className="preview-tags">
-                    <span>
-                      <span className="status-dot" />
-                      LIVE PREVIEW
-                    </span>
-                    <span>
-                      {design.thickness} mm {design.material}
-                    </span>
-                  </div>
-                  <div className="bend-control">
-                    <label htmlFor="bend-slider">
-                      <Waves size={16} />
-                      <span>Unfold</span>
-                    </label>
-                    <input
-                      id="bend-slider"
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={Math.round(bend * 100)}
-                      onChange={(e) => setBend(Number(e.target.value) / 100)}
-                      aria-valuetext={`${Math.round(bend * 100)} percent bent`}
-                    />
-                    <span>
-                      Bent <strong>{Math.round(bend * 100)}%</strong>
-                    </span>
-                  </div>
-                  <div className="canvas-caption">
-                    <MousePointer2 size={13} />
-                    <span>Drag to orbit · Scroll to zoom</span>
-                    <span className="preview-disclaimer">Geometry preview</span>
-                  </div>
-                </>
-              )}
-              {view === 'plan' && (
-                <div className="plan-legend">
-                  <span>
-                    <i className="outline-key" />
-                    Outer cut
-                  </span>
-                  <span>
-                    <i className="hinge-key" />
-                    Living hinge
-                  </span>
-                  <span>1:1 export · mm</span>
-                </div>
-              )}
-            </div>
-            <div className="preset-strip">
-              <div className="preset-intro">
-                <Sparkles size={17} />
-                <div>
-                  <strong>A starting point.</strong>
-                  <span>Make it your own.</span>
-                </div>
-              </div>
-              <div className="preset-options">
-                {presets.slice(0, 4).map((p) => (
-                  <button
-                    key={p.id}
-                    onClick={() => usePreset(p)}
-                    aria-label={`Use ${p.name} preset`}
-                    title={p.description}
-                  >
-                    <PresetDrawing segments={p.segments} />
-                    <span>{p.name}</span>
-                    <MoveUpRight size={12} />
-                  </button>
-                ))}
-              </div>
-            </div>
-          </section>
-          <aside className="settings-sidebar" aria-label="Material and laser settings">
-            <div className="rail-heading">
-              <Settings2 size={17} />
-              <h2>The details</h2>
-            </div>
-            <section className="material-section">
-              <div className={`wood-swatch ${design.material}`}>
-                <span>
-                  {design.material === 'birch' ? '01' : design.material === 'walnut' ? '02' : '03'}
-                </span>
-                <Layers3 size={23} />
-              </div>
-              <label className="select-field">
-                <span>Material appearance</span>
-                <div>
-                  <select
-                    value={design.material}
-                    onChange={(e) => patch({ material: e.target.value as Design['material'] })}
-                  >
-                    <option value="birch">Birch plywood</option>
-                    <option value="walnut">Walnut plywood</option>
-                    <option value="basswood">Basswood plywood</option>
-                  </select>
-                  <ChevronDown size={14} />
-                </div>
-              </label>
-              <div className="field-row">
-                <NumberField
-                  label="Thickness"
-                  value={design.thickness}
-                  onChange={(v) => patch({ thickness: v })}
-                  min={0.5}
-                  max={12}
-                  step={0.5}
-                />
-                <NumberField
-                  label="Laser kerf"
-                  value={design.kerf}
-                  onChange={(v) => patch({ kerf: v })}
-                  min={0.05}
-                  max={0.8}
-                  step={0.05}
-                />
-              </div>
-            </section>
-            <section className="hinge-section">
-              <div className="section-label">
-                <span>LIVING HINGE</span>
-                <span className="mini-badge">{hingePatterns.length} patterns</span>
-              </div>
-              <fieldset className="pattern-selector" aria-describedby="pattern-description">
-                <legend className="sr-only">Hinge pattern</legend>
-                {hingePatterns.map((pattern) => (
-                  <label key={pattern.value} className="pattern-option">
-                    <input
-                      className="pattern-radio"
-                      type="radio"
-                      name="hinge-pattern"
-                      value={pattern.value}
-                      checked={design.pattern === pattern.value}
-                      onChange={() => patch({ pattern: pattern.value })}
-                    />
-                    <span>
-                      <PatternDrawing pattern={pattern.value} />
-                      <span>{pattern.label}</span>
-                    </span>
-                  </label>
-                ))}
-              </fieldset>
-              <p className="control-hint" id="pattern-description">
-                {hingePatterns.find((pattern) => pattern.value === design.pattern)?.description}
-              </p>
-              {patternPresets && (
-                <div className="family-pattern-settings">
-                  <span className="family-presets-label">Shape presets</span>
-                  <div className="family-presets">
-                    {patternPresets.map((preset) => (
-                      <Button
-                        key={preset.id}
-                        variant="outline"
-                        size="sm"
-                        aria-pressed={Object.entries(preset.settings).every(([key, value]) => {
-                          const current = design[key as keyof Design]
-                          return typeof value === 'number' && typeof current === 'number'
-                            ? Math.abs(current - value) < 1e-10
-                            : current === value
-                        })}
-                        onClick={() => patch(preset.settings)}
-                      >
-                        {preset.label}
-                      </Button>
-                    ))}
-                  </div>
-                  <p className="control-hint">
-                    {isMeander
-                      ? 'Spacing sets row pitch; cut length sets the full slit length across the sheet. End separation sets the transverse gap between overlapping slit ends.'
-                      : 'Spacing sets row pitch; cut length sets opening length; bridge sets the gap between ends.'}
-                  </p>
-                  <div
-                    className="family-parameters"
-                    onPointerDownCapture={() => {
-                      pointerHistory.current = { active: true, recorded: false }
-                    }}
-                    onPointerUpCapture={() => {
-                      pointerHistory.current.active = false
-                    }}
-                    onPointerCancelCapture={() => {
-                      pointerHistory.current.active = false
-                    }}
-                  >
-                    {design.pattern === 'honeycomb' ? (
-                      <>
-                        <PercentageField
-                          label="Roundness"
-                          value={design.honeycombRoundness}
-                          onChange={(value) => patch({ honeycombRoundness: value })}
-                          hint="Straight diamond sides at 0%; curved honeycomb sides at 100%."
-                        />
-                        <PercentageField
-                          label="Opening width"
-                          value={design.honeycombWidth}
-                          onChange={(value) => patch({ honeycombWidth: value })}
-                          min={10}
-                          max={95}
-                          hint="Width of each opening as a share of the row spacing."
-                        />
-                      </>
-                    ) : (
-                      <PercentageField
-                        label="End overlap"
-                        value={design.meanderOverlap}
-                        onChange={(value) => patch({ meanderOverlap: value })}
-                        max={30}
-                        hint="How much neighboring slit ends overlap along their length. Lower values spread the repeats farther apart."
-                      />
-                    )}
-                  </div>
-                </div>
-              )}
-              <div className="field-row">
-                <NumberField
-                  label="Cut spacing"
-                  value={design.spacing}
-                  onChange={(v) => patch({ spacing: v })}
-                  min={1}
-                  max={12}
-                  step={patternPresets ? 0.01 : 0.5}
-                />
-                <NumberField
-                  label={isMeander ? 'End separation' : 'Bridge'}
-                  value={design.bridge}
-                  onChange={(v) => patch({ bridge: v })}
-                  min={0.5}
-                  max={10}
-                  step={patternPresets ? 0.01 : 0.5}
-                />
-              </div>
-              <div className="field-row">
-                <NumberField
-                  label="Cut length"
-                  value={design.cutLength}
-                  onChange={(v) => patch({ cutLength: v })}
-                  min={5}
-                  max={80}
-                  step={patternPresets ? 0.01 : 1}
-                />
-              </div>
-              <div className="swatch-download">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={exportTestSwatches}
-                  aria-label="Download test swatches SVG"
-                >
-                  <ArrowDownToLine size={15} /> Test swatches · SVG
-                </Button>
-                <p className="control-hint">
-                  9 samples vary spacing and {isMeander ? 'end separation' : 'bridge'} by up to 20%.{' '}
-                  {swatchSize.width.toFixed(0)} × {swatchSize.height.toFixed(0)} mm at 1:1. Black
-                  labels: engrave. Red and blue paths: cut.
-                </p>
-              </div>
-            </section>
-            <section className="cut-summary">
-              <div className="section-label">
-                <span>YOUR CUT PLAN</span>
-                <button
-                  onClick={() => {
-                    setView('plan')
-                    setMobilePanel('studio')
-                  }}
-                  aria-label="View full cut plan"
-                >
-                  <MoveUpRight size={16} />
-                </button>
-              </div>
-              <button
-                className="cut-thumbnail"
-                onClick={() => {
-                  setView('plan')
-                  setMobilePanel('studio')
-                }}
-                aria-label="Open cut plan preview"
-              >
-                <CutPlanView design={design} plan={plan} large={false} />
-              </button>
-              <dl>
-                <div>
-                  <dt>Sheet size</dt>
-                  <dd>
-                    {plan.length.toFixed(1)} × {plan.width.toFixed(1)} <small>mm</small>
-                  </dd>
-                </div>
-                <div>
-                  <dt>Hinge cuts</dt>
-                  <dd>{plan.cuts.length}</dd>
-                </div>
-                <div>
-                  <dt>Total cut length</dt>
-                  <dd>
-                    {(plan.cutLength / 1000).toFixed(2)} <small>m</small>
-                  </dd>
-                </div>
-              </dl>
-            </section>
-            <div className={`material-note ${plan.warnings.length ? 'has-warning' : ''}`}>
-              <CircleHelp size={16} />
-              <p>
-                {plan.warnings[0] ||
-                  'Wood has a little personality. Test a small hinge in your material before the final cut.'}
-              </p>
-            </div>
-          </aside>
+          <DesignSidebar
+            panel={panel}
+            setPanel={setPanel}
+            design={design}
+            selectedId={selectedId}
+            setSelectedId={setSelectedId}
+            update={update}
+            addSegment={addSegment}
+            selected={selected}
+            patch={patch}
+            changeSegment={changeSegment}
+            total={total}
+            shape={shape}
+            importingSVG={importingSVG}
+            svgInput={svgInput}
+            setView={setView}
+            setMobilePanel={setMobilePanel}
+          />
+
+          <StudioCanvas
+            pointerHistory={pointerHistory}
+            view={view}
+            design={design}
+            plan={plan}
+            bend={bend}
+            showGrid={showGrid}
+            showCuts={showCuts}
+            camera={camera}
+            resetKey={resetKey}
+            update={update}
+            svgInput={svgInput}
+            importingSVG={importingSVG}
+            setResetKey={setResetKey}
+            setShowGrid={setShowGrid}
+            setShowCuts={setShowCuts}
+            setCamera={setCamera}
+            setBend={setBend}
+            applyPreset={applyPreset}
+          />
+
+          <SettingsSidebar
+            design={design}
+            patch={patch}
+            patternPresets={patternPresets}
+            isMeander={isMeander}
+            pointerHistory={pointerHistory}
+            exportTestSwatches={exportTestSwatches}
+            swatchSize={swatchSize}
+            setView={setView}
+            setMobilePanel={setMobilePanel}
+            plan={plan}
+          />
         </main>
         <footer className="status-bar">
           <span>
@@ -1345,40 +150,14 @@ export default function App() {
             © 2026 fredi Bach
           </a>
         </footer>
-        <input
-          className="sr-only"
-          ref={fileInput}
-          type="file"
-          accept=".json,.bentwood.json"
-          aria-label="Import project file"
-          onChange={async (e) => {
-            const file = e.target.files?.[0]
-            if (!file) return
-            try {
-              if (file.size > 1_000_000) throw new Error('File is too large.')
-              const parsed = validateDesign(JSON.parse(await file.text()))
-              if (!parsed) throw new Error('This is not a valid Bentwood project.')
-              update(parsed)
-              setSelectedId(null)
-              setResetKey((k) => k + 1)
-              setNotice('Project opened.')
-            } catch (err) {
-              setNotice(err instanceof Error ? err.message : 'Could not open this project.')
-            }
-            e.target.value = ''
-          }}
-        />
-        <input
-          ref={svgInput}
-          type="file"
-          hidden
-          accept=".svg,image/svg+xml"
-          aria-label="Import SVG outline file"
-          onChange={(event) => {
-            const file = event.currentTarget.files?.[0]
-            event.currentTarget.value = ''
-            if (file) void importOutline(file)
-          }}
+        <ProjectInputs
+          fileInput={fileInput}
+          update={update}
+          setSelectedId={setSelectedId}
+          setResetKey={setResetKey}
+          setNotice={setNotice}
+          svgInput={svgInput}
+          importOutline={importOutline}
         />
         {notice && (
           <div role="status" className="toast">
@@ -1389,132 +168,15 @@ export default function App() {
             </button>
           </div>
         )}
-        <Dialog open={exportOpen} onOpenChange={setExportOpen}>
-          <DialogContent>
-            <div className="dialog-icon">
-              <Scissors size={25} />
-            </div>
-            <DialogTitle>From your screen to your workshop.</DialogTitle>
-            <DialogDescription>
-              Your cut plan is a 1:1 vector file in millimetres. Import it into your laser software
-              without scaling.
-            </DialogDescription>
-            <div className="export-preview">
-              <CutPlanView design={design} plan={plan} large={false} />
-            </div>
-            <div className="export-stats">
-              <span>
-                <strong>
-                  {plan.length.toFixed(1)} × {plan.width.toFixed(1)}
-                </strong>
-                mm sheet size
-              </span>
-              <span>
-                <strong>{plan.cuts.length}</strong>hinge cuts
-              </span>
-              <span>
-                <strong>{design.thickness}</strong>mm plywood
-              </span>
-            </div>
-            <div className="export-note">
-              <strong>Before you cut</strong>
-              <p>
-                Red outlines and blue hinge lines are cut centre lines. Kerf ({design.kerf} mm) is
-                visualized, but no toolpath compensation is applied. Set compensation and laser
-                power in your cutter software. Test a material sample first; this preview does not
-                simulate strength or springback.
-              </p>
-              {plan.warnings.length > 0 && (
-                <ul>
-                  {plan.warnings.map((warning) => (
-                    <li key={warning}>{warning}</li>
-                  ))}
-                </ul>
-              )}
-            </div>
-            <div className="dialog-actions">
-              <Button variant="outline" onClick={() => exportFile('dxf')}>
-                <ArrowDownToLine size={16} />
-                Download DXF
-              </Button>
-              <Button onClick={() => exportFile('svg')}>
-                <ArrowDownToLine size={16} />
-                Download SVG
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-        <Dialog open={helpOpen} onOpenChange={setHelpOpen}>
-          <DialogContent>
-            <div className="dialog-icon">
-              <Waves size={25} />
-            </div>
-            <DialogTitle>A little flexibility goes a long way.</DialogTitle>
-            <DialogDescription>
-              Turn a flat sheet of plywood into something with a little more dimension.
-            </DialogDescription>
-            <ol className="guide-steps">
-              <li>
-                <span>01</span>
-                <div>
-                  <h3>Find your curve.</h3>
-                  <p>
-                    Start with a preset, then add straight sections and curves. Select a segment to
-                    set its length, radius, angle, and direction.
-                  </p>
-                </div>
-              </li>
-              <li>
-                <span>02</span>
-                <div>
-                  <h3>Make your mark.</h3>
-                  <p>
-                    Choose a panel outline or draw a custom polygon. Its length follows the path.
-                    Its width runs across the sheet.
-                  </p>
-                </div>
-              </li>
-              <li>
-                <span>03</span>
-                <div>
-                  <h3>Give it some give.</h3>
-                  <p>
-                    Choose a hinge pattern and set your plywood thickness. Classic, Graded, Wavy
-                    slits, and Zigzag use interrupted cut lines; Small waves removes slender
-                    openings to form an interlocking texture. Orbit the preview and unfold it to see
-                    the transformation.
-                  </p>
-                </div>
-              </li>
-              <li>
-                <span>04</span>
-                <div>
-                  <h3>Bring it to life.</h3>
-                  <p>
-                    Download test swatches to compare spacing and bridges in your own plywood. Set
-                    the separate labels layer to engrave. Then export your panel as SVG or DXF in
-                    millimetres; grain, glue, and laser kerf all affect the real bend.
-                  </p>
-                </div>
-              </li>
-            </ol>
-            <p className="guide-source">
-              Inspired by{' '}
-              <a
-                href="https://endurancelasers.com/making-flexible-plywood-using-a-laser/"
-                target="_blank"
-                rel="noreferrer"
-              >
-                Endurance’s flexible plywood guide <MoveUpRight size={12} />
-              </a>
-              .
-            </p>
-            <Button className="full-width" onClick={() => setHelpOpen(false)}>
-              Let’s make something
-              <ArrowRight size={16} />
-            </Button>
-          </DialogContent>
-        </Dialog>
+        <StudioDialogs
+          exportOpen={exportOpen}
+          setExportOpen={setExportOpen}
+          design={design}
+          plan={plan}
+          exportFile={exportFile}
+          helpOpen={helpOpen}
+          setHelpOpen={setHelpOpen}
+        />
       </div>
     </TooltipProvider>
   )
