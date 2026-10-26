@@ -125,9 +125,15 @@ The path follows the panel’s **neutral axis**, not either surface of the plywo
 
 ## Code map
 
+See [Architecture](docs/architecture.md) for the data flow, module boundaries, geometry contracts,
+persistence, imports/exports, and rendering lifecycle. [AGENTS.md](AGENTS.md) provides focused
+instructions for agents working on this repository.
+
 | File                                | Responsibility                                                                                        |
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| `src/App.tsx`                       | Workspace, design state, undo/redo, local persistence, project files, export dialogs                  |
+| `src/App.tsx`                       | Workspace composition and wiring between studio state and components                                  |
+| `src/hooks/useStudio.tsx`           | Design state, undo/redo, local persistence, project downloads, SVG import, and export actions         |
+| `src/components/studio/`            | Sidebars, navigation, canvas switching, controls, dialogs, and project file inputs                    |
 | `src/lib/types.ts`                  | Versioned project schema and geometry types                                                           |
 | `src/lib/geometry.ts`               | Arc-length sampling, outlines, pattern generation, clipped hinge cuts, validation, SVG/DXF generation |
 | `src/lib/cut-path.ts`               | Shared cut-path points and drawing helpers                                                            |
