@@ -2,6 +2,7 @@ import type { CutLine, CutPlan, Design, PathSample, Point, Segment } from './typ
 import { cutPathData, cutPathLength, getCutPoints } from './cut-path'
 import { createCutoutLattice, smallWaveCell } from './cutout-lattice'
 import { honeycombCell, honeycombClearance } from './honeycomb'
+import { createMeanderLattice, meanderCell, meanderClearance, meanderRepeat } from './meander'
 import {
   clipPatternColumn,
   MAX_PATTERN_SEGMENTS,
@@ -303,6 +304,8 @@ export function createCutPlan(design: Design): CutPlan {
   if (pathOverlaps(design.segments))
     warnings.push('The bend path crosses itself. The assembled panel may collide.')
   const shaped = design.pattern === 'wave' || design.pattern === 'zigzag'
+  const meander = design.pattern === 'meander' || design.pattern === 'meander-wide'
+  const motif = meander ? meanderCell(design) : undefined
   const cell =
     design.pattern === 'honeycomb'
       ? honeycombCell(design)
@@ -310,8 +313,9 @@ export function createCutPlan(design: Design): CutPlan {
         ? smallWaveCell(design)
         : undefined
   const shape = patternShape(design)
-  const minimumSpacing =
-    design.pattern === 'honeycomb'
+  const minimumSpacing = meander
+    ? meanderClearance(design, motif!)
+    : design.pattern === 'honeycomb'
       ? honeycombClearance(design, cell!)
       : design.pattern === 'small-wave'
         ? design.spacing / 2
@@ -320,9 +324,11 @@ export function createCutPlan(design: Design): CutPlan {
           : design.spacing
   if (minimumSpacing <= design.kerf || design.bridge <= design.kerf)
     warnings.push(
-      'The laser kerf is as wide as a ligament or bridge. Increase spacing or bridge size before exporting.',
+      meander
+        ? 'The laser kerf reaches a neighboring meander cut. Adjust spacing, end separation, or cut length before exporting.'
+        : 'The laser kerf is as wide as a ligament or bridge. Increase spacing or bridge size before exporting.',
     )
-  const period = Math.max(0.5, design.cutLength + design.bridge)
+  const period = Math.max(0.5, meander ? meanderRepeat(design) : design.cutLength + design.bridge)
   const spacing = Math.max(0.5, design.spacing)
   const estimatedCuts =
     (design.segments
@@ -339,9 +345,11 @@ export function createCutPlan(design: Design): CutPlan {
         .filter((s) => s.type === 'arc')
         .reduce((sum, s) => sum + segmentLength(s) / spacing, 0) *
       ((width / shape.period) * shape.samples + 2 * (width / period + 2))
-    : cell
-      ? cell.length * estimatedCuts
-      : estimatedCuts
+    : motif
+      ? (motif.length - 1) * estimatedCuts
+      : cell
+        ? cell.length * estimatedCuts
+        : estimatedCuts
   if (estimatedSegments > MAX_PATTERN_SEGMENTS)
     warnings.push(
       'This pattern exceeds 250,000 toolpath segments. Increase spacing or cut length before exporting.',
@@ -350,7 +358,24 @@ export function createCutPlan(design: Design): CutPlan {
     ...design.segments.filter((s) => s.type === 'arc').map((s) => s.radius),
   )
   let skippedNarrowSpans = false
-  if (validOutline && estimatedCuts <= 50000 && estimatedSegments <= MAX_PATTERN_SEGMENTS && cell) {
+  const canGenerate =
+    validOutline && estimatedCuts <= 50000 && estimatedSegments <= MAX_PATTERN_SEGMENTS
+  if (canGenerate && motif) {
+    if (minimumSpacing > design.kerf && design.bridge > design.kerf) {
+      const result = createMeanderLattice(design, outline, length, width, motif)
+      cuts.push(...result.cuts)
+      if (result.limit)
+        warnings.push(
+          result.limit === 'cuts'
+            ? 'This pattern exceeds 50,000 cuts. Increase spacing or cut length before exporting.'
+            : 'This pattern exceeds 250,000 toolpath segments. Increase spacing or cut length before exporting.',
+        )
+      if (result.skipped)
+        warnings.push(
+          'Some meanders cross narrow outline sections. Those cuts remain uncut to keep the sheet connected.',
+        )
+    }
+  } else if (canGenerate && cell) {
     const result = createCutoutLattice(design, outline, length, width, cell)
     cuts.push(...result.cuts)
     cutouts = result.cutouts
@@ -364,7 +389,7 @@ export function createCutPlan(design: Design): CutPlan {
       warnings.push(
         'Some openings cross narrow outline sections. Those openings remain uncut to keep the sheet connected.',
       )
-  } else if (validOutline && estimatedCuts <= 50000 && estimatedSegments <= MAX_PATTERN_SEGMENTS) {
+  } else if (canGenerate) {
     let start = 0
     let previousColumn = -Infinity
     let bridgePhase = 0
@@ -432,7 +457,10 @@ export function createCutPlan(design: Design): CutPlan {
     validOutline &&
     !cuts.length &&
     design.segments.some((segment) => segment.type === 'arc') &&
-    !warnings.some((warning) => warning.includes('50,000') || warning.includes('250,000'))
+    !warnings.some(
+      (warning) =>
+        warning.includes('50,000') || warning.includes('250,000') || warning.includes('laser kerf'),
+    )
   )
     warnings.push(
       'No hinge cuts fit inside the outline. Increase the panel size or reduce the bridge size.',
@@ -467,7 +495,9 @@ export function createExportPlan(design: Design) {
     throw new Error('Reduce the number of hinge cuts before exporting.')
   if (plan.warnings.some((warning) => warning.includes('laser kerf')))
     throw new Error(
-      'Increase spacing or bridge size so the laser kerf leaves connected material before exporting.',
+      design.pattern === 'meander' || design.pattern === 'meander-wide'
+        ? 'Adjust spacing, end separation, or cut length so the laser kerf leaves connected material before exporting.'
+        : 'Increase spacing or bridge size so the laser kerf leaves connected material before exporting.',
     )
   return plan
 }
@@ -703,9 +733,16 @@ export function validateDesign(input: unknown): Design | null {
     return null
   if (
     value.version === 3 &&
-    !['classic', 'graded', 'wave', 'zigzag', 'small-wave', 'honeycomb'].includes(
-      value.pattern as string,
-    )
+    ![
+      'classic',
+      'graded',
+      'wave',
+      'zigzag',
+      'small-wave',
+      'honeycomb',
+      'meander',
+      'meander-wide',
+    ].includes(value.pattern as string)
   )
     return null
   const segments: Segment[] = []
@@ -784,12 +821,9 @@ export function validateDesign(input: unknown): Design | null {
   const curvedLength = segments
     .filter((segment) => segment.type === 'arc')
     .reduce((sum, segment) => sum + segmentLength(segment), 0)
-  if (
-    (curvedLength / result.spacing) *
-      (getPanelWidth(result) / (result.cutLength + result.bridge) + 2) >
-    50000
-  )
-    return null
+  const meander = result.pattern === 'meander' || result.pattern === 'meander-wide'
+  const period = meander ? meanderRepeat(result) : result.cutLength + result.bridge
+  if ((curvedLength / result.spacing) * (getPanelWidth(result) / period + 2) > 50000) return null
   if (result.pattern === 'wave' || result.pattern === 'zigzag') {
     const shape = patternShape(result)
     if (
@@ -805,6 +839,14 @@ export function validateDesign(input: unknown): Design | null {
     (curvedLength / result.spacing) *
       (getPanelWidth(result) / (result.cutLength + result.bridge) + 2) *
       honeycombCell(result).length >
+      MAX_PATTERN_SEGMENTS
+  )
+    return null
+  if (
+    meander &&
+    (curvedLength / result.spacing) *
+      (getPanelWidth(result) / period + 2) *
+      (meanderCell(result).length - 1) >
       MAX_PATTERN_SEGMENTS
   )
     return null

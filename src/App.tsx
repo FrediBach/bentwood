@@ -49,6 +49,7 @@ import {
 } from './lib/geometry'
 import type { Design, OutlineKind, Segment } from './lib/types'
 import { exportTestSwatchesSVG, getTestSwatchSheetSize } from './lib/test-swatches'
+import { meanderCell, meanderRepeat } from './lib/meander'
 
 type View = 'preview' | 'outline' | 'plan'
 // Keep the original storage key so validation can migrate existing projects in place.
@@ -89,9 +90,51 @@ const hingePatterns: { value: Design['pattern']; label: string; description: str
     description:
       'Staggered curved openings with pointed ends form the honeycomb texture from the reference. Their long axis runs across the sheet width, perpendicular to the bend.',
   },
+  {
+    value: 'meander',
+    label: 'Fine meander',
+    description:
+      'Closely repeated rounded slits follow the reference meander, with overlapping ends separated by connecting material.',
+  },
+  {
+    value: 'meander-wide',
+    label: 'Wide meander',
+    description:
+      'A more open repeat of the rounded slits creates a broader meander texture. This variation uses less overlap between neighboring ends.',
+  },
 ]
 
 function PatternDrawing({ pattern }: { pattern: Design['pattern'] }) {
+  if (pattern === 'meander' || pattern === 'meander-wide') {
+    const miniature = {
+      ...defaultDesign,
+      pattern,
+      spacing: 3.04,
+      bridge: 1.62,
+      cutLength: pattern === 'meander' ? 22.58 : 33.87,
+    }
+    const cell = meanderCell(miniature)
+    const scale = 1.45
+    const repeat = meanderRepeat(miniature) * scale
+    return (
+      <svg viewBox="0 0 64 32" aria-hidden="true" focusable="false">
+        {Array.from({ length: 8 }, (_, row) =>
+          Array.from({ length: 4 }, (_, column) => (
+            <polyline
+              key={`${row}-${column}`}
+              points={cell
+                .map(
+                  (p) =>
+                    `${p.y * scale + (column - 1) * repeat},${p.x * scale + row * miniature.spacing * scale}`,
+                )
+                .join(' ')}
+              strokeWidth={0.65}
+            />
+          )),
+        )}
+      </svg>
+    )
+  }
   if (pattern === 'honeycomb')
     return (
       <svg viewBox="0 0 64 32" aria-hidden="true" focusable="false">
@@ -328,12 +371,15 @@ export default function App() {
   const pointerHistory = useRef({ active: false, recorded: false })
   const plan = useMemo(() => createCutPlan(design), [design])
   const swatchSize = useMemo(() => getTestSwatchSheetSize(design), [design])
+  const isMeander = design.pattern === 'meander' || design.pattern === 'meander-wide'
   const referenceSettings =
     design.pattern === 'small-wave'
       ? { spacing: 2.4, bridge: 5.25, cutLength: 15.75 }
       : design.pattern === 'honeycomb'
         ? { spacing: 2.4, bridge: 6.56, cutLength: 19.68 }
-        : null
+        : isMeander
+          ? { spacing: 3.04, bridge: 1.62, cutLength: design.pattern === 'meander' ? 22.58 : 33.87 }
+          : null
   const selected = design.segments.find((s) => s.id === selectedId)
   const total = pathLength(design.segments)
   const filename = (design.name.trim() || 'bentwood-design')
@@ -1018,11 +1064,14 @@ export default function App() {
               {referenceSettings && (
                 <div className="reference-pattern-settings">
                   <Button variant="outline" size="sm" onClick={() => patch(referenceSettings)}>
-                    Reference proportions
+                    {design.pattern === 'meander-wide'
+                      ? 'Suggested proportions'
+                      : 'Reference proportions'}
                   </Button>
                   <p className="control-hint">
-                    Spacing sets row pitch; cut length sets opening length; bridge sets the gap
-                    between ends.
+                    {isMeander
+                      ? 'Spacing sets row pitch; cut length sets the full slit length across the sheet. End separation sets the transverse gap between overlapping slit ends.'
+                      : 'Spacing sets row pitch; cut length sets opening length; bridge sets the gap between ends.'}
                   </p>
                 </div>
               )}
@@ -1033,15 +1082,21 @@ export default function App() {
                   onChange={(v) => patch({ spacing: v })}
                   min={1}
                   max={12}
-                  step={referenceSettings ? 0.1 : 0.5}
+                  step={isMeander ? 0.01 : referenceSettings ? 0.1 : 0.5}
                 />
                 <NumberField
-                  label="Bridge"
+                  label={isMeander ? 'End separation' : 'Bridge'}
                   value={design.bridge}
                   onChange={(v) => patch({ bridge: v })}
                   min={0.5}
                   max={10}
-                  step={design.pattern === 'honeycomb' ? 0.01 : referenceSettings ? 0.25 : 0.5}
+                  step={
+                    isMeander || design.pattern === 'honeycomb'
+                      ? 0.01
+                      : referenceSettings
+                        ? 0.25
+                        : 0.5
+                  }
                 />
               </div>
               <div className="field-row">
@@ -1051,7 +1106,13 @@ export default function App() {
                   onChange={(v) => patch({ cutLength: v })}
                   min={5}
                   max={80}
-                  step={design.pattern === 'honeycomb' ? 0.01 : referenceSettings ? 0.25 : 1}
+                  step={
+                    isMeander || design.pattern === 'honeycomb'
+                      ? 0.01
+                      : referenceSettings
+                        ? 0.25
+                        : 1
+                  }
                 />
               </div>
               <div className="swatch-download">
@@ -1064,9 +1125,9 @@ export default function App() {
                   <ArrowDownToLine size={15} /> Test swatches · SVG
                 </Button>
                 <p className="control-hint">
-                  9 samples vary spacing and bridge by up to 20%. {swatchSize.width.toFixed(0)} ×{' '}
-                  {swatchSize.height.toFixed(0)} mm at 1:1. Black labels: engrave. Red and blue
-                  paths: cut.
+                  9 samples vary spacing and {isMeander ? 'end separation' : 'bridge'} by up to 20%.{' '}
+                  {swatchSize.width.toFixed(0)} × {swatchSize.height.toFixed(0)} mm at 1:1. Black
+                  labels: engrave. Red and blue paths: cut.
                 </p>
               </div>
             </section>

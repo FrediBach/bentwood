@@ -52,12 +52,18 @@ export function exportTestSwatchesSVG(design: Design): string {
   const hinges: string[] = []
   const outlines: string[] = []
   const labels: string[] = []
+  const meander = design.pattern === 'meander' || design.pattern === 'meander-wide'
+  const bridgeLabel = meander ? 'end separation' : 'bridge size'
   const patternName =
     design.pattern === 'small-wave'
       ? 'Small waves'
       : design.pattern === 'wave'
         ? 'Wavy slits'
-        : design.pattern[0].toUpperCase() + design.pattern.slice(1)
+        : design.pattern === 'meander'
+          ? 'Fine meander'
+          : design.pattern === 'meander-wide'
+            ? 'Wide meander'
+            : design.pattern[0].toUpperCase() + design.pattern.slice(1)
   const materialName = design.material[0].toUpperCase() + design.material.slice(1)
 
   for (let row = 0; row < 3; row++) {
@@ -107,7 +113,7 @@ export function exportTestSwatchesSVG(design: Design): string {
       const lines = [
         `${index}. ${patternName}`,
         `S ${number(spacing)} mm`,
-        `B ${number(bridge)} mm`,
+        `${meander ? 'E' : 'B'} ${number(bridge)} mm`,
         `L ${number(design.cutLength)} mm`,
         materialName,
         `T ${number(design.thickness)} mm`,
@@ -128,7 +134,7 @@ export function exportTestSwatchesSVG(design: Design): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${number(width)}mm" height="${number(height)}mm" viewBox="0 0 ${number(width)} ${number(height)}">
   <title>${escapeXML(design.name)} — ${patternName} hinge test swatches</title>
-  <desc>Nine independent samples at 1:1 in millimetres. Columns vary cut spacing; rows vary bridge size by up to 20 percent, clamped to supported limits. S: spacing, B: bridge, L: cut length, T: thickness, K: nominal kerf. Red outer-contour and blue hinge-cuts are laser centre lines with no kerf compensation. Black engraving-labels are text for engraving, not cutting; assign operations in laser software and verify text before processing. Use the same material and grain direction as the final panel. Samples compare flexibility; they do not specify an achievable bend radius or strength.</desc>
+  <desc>Nine independent samples at 1:1 in millimetres. Columns vary cut spacing; rows vary ${bridgeLabel} by up to 20 percent, clamped to supported limits. S: spacing, ${meander ? 'E: transverse end separation' : 'B: bridge'}, L: cut length, T: thickness, K: nominal kerf. Red outer-contour and blue hinge-cuts are laser centre lines with no kerf compensation. Black engraving-labels are text for engraving, not cutting; assign operations in laser software and verify text before processing. Use the same material and grain direction as the final panel. Samples compare flexibility; they do not specify an achievable bend radius or strength.</desc>
   <g id="hinge-cuts" fill="none" stroke="#0000ff" stroke-width="0.01">
 ${hinges.join('\n')}
   </g>

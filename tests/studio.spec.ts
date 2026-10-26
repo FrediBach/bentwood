@@ -157,6 +157,15 @@ test('mobile panels and accessible export dialog', async ({ page }) => {
   await page.getByRole('button', { name: 'Reference proportions', exact: true }).click()
   await expect(honeycomb).toBeChecked()
   await expect(page.locator('#pattern-description')).toContainText('curved openings')
+  const fineMeander = page.getByRole('radio', { name: 'Fine meander', exact: true })
+  await fineMeander.check()
+  await page.getByRole('button', { name: 'Reference proportions', exact: true }).click()
+  await expect(fineMeander).toBeChecked()
+  const wideMeander = page.getByRole('radio', { name: 'Wide meander', exact: true })
+  await wideMeander.check()
+  await page.getByRole('button', { name: 'Suggested proportions', exact: true }).click()
+  await expect(wideMeander).toBeChecked()
+  await expect(page.locator('#pattern-description')).toContainText('more open repeat')
   await expect(
     page.getByRole('button', { name: 'Download test swatches SVG', exact: true }),
   ).toBeVisible()
@@ -170,7 +179,7 @@ test('mobile panels and accessible export dialog', async ({ page }) => {
       nodes: v.nodes.map((n) => n.target),
     })),
   ).toEqual([])
-  await honeycomb.scrollIntoViewIfNeeded()
+  await wideMeander.scrollIntoViewIfNeeded()
   await page.screenshot({ path: 'test-results/patterns-mobile.png' })
   await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
@@ -427,6 +436,91 @@ for (const pattern of [
     }, swatchSVG)
     expect(sampleContours).toHaveLength(9)
     expect(sampleContours.every((count) => count > 0)).toBe(true)
+    expect(swatchSVG).toContain(pattern.label)
+    expect(errors).toEqual([])
+  })
+}
+
+for (const pattern of [
+  { id: 'meander', label: 'Fine meander', preset: 'Reference proportions', cutLength: 22.58 },
+  { id: 'meander-wide', label: 'Wide meander', preset: 'Suggested proportions', cutLength: 33.87 },
+]) {
+  test(`${pattern.label} preserves rounded slits through previews, exports and saved projects`, async ({
+    page,
+  }) => {
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    await page.goto('/')
+    await page.getByRole('radio', { name: pattern.label, exact: true }).check()
+    await page.getByRole('button', { name: pattern.preset, exact: true }).click()
+    await expect(page.getByRole('spinbutton', { name: 'Cut spacing mm', exact: true })).toHaveValue(
+      '3.04',
+    )
+    await expect(
+      page.getByRole('spinbutton', { name: 'End separation mm', exact: true }),
+    ).toHaveValue('1.62')
+    await expect(page.getByRole('spinbutton', { name: 'Cut length mm', exact: true })).toHaveValue(
+      String(pattern.cutLength),
+    )
+    await expect(page.locator('.plywood-preview canvas')).toBeVisible()
+    await expect(page.getByText('Dense pattern: cuts shown as lines')).toHaveCount(0)
+    await page.screenshot({ path: `test-results/${pattern.id}-bent-preview.png` })
+    await page.getByLabel('Unfold').fill('0')
+    await page.getByLabel('Camera view').selectOption('front')
+    await page.screenshot({ path: `test-results/${pattern.id}-flat-preview.png` })
+    await page.getByRole('button', { name: 'Cut plan', exact: true }).click()
+    const cuts = page.locator('.cut-plan-view [data-hinge-cut]')
+    expect(await cuts.count()).toBeGreaterThan(10)
+    const paths = await cuts.evaluateAll((elements) =>
+      elements.map((element) => element.getAttribute('d')!),
+    )
+    expect(paths.every((path) => !path.endsWith('Z'))).toBe(true)
+    const curvedPath = paths.find((path) => (path.match(/L/g)?.length ?? 0) > 8)
+    expect(curvedPath).toBeTruthy()
+    await page.screenshot({ path: `test-results/${pattern.id}-cut-plan.png` })
+
+    const saved = page.waitForEvent('download')
+    await page.getByRole('button', { name: 'Save project file', exact: true }).click()
+    const projectFile = await saved
+    const project = JSON.parse(await readFile((await projectFile.path())!, 'utf8'))
+    expect(project.pattern).toBe(pattern.id)
+    expect(project.spacing).toBe(3.04)
+    expect(project.bridge).toBe(1.62)
+    expect(project.cutLength).toBe(pattern.cutLength)
+    expect(project.version).toBe(3)
+    await page.reload()
+    await expect(page.getByRole('radio', { name: pattern.label, exact: true })).toBeChecked()
+
+    await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
+    const exported = page.waitForEvent('download')
+    await page.getByRole('button', { name: 'Download SVG', exact: true }).click()
+    const svgFile = await exported
+    const svg = await readFile((await svgFile.path())!, 'utf8')
+    expect(svg).toContain(`d="${curvedPath}"`)
+    const dxfDownload = page.waitForEvent('download')
+    await page.getByRole('button', { name: 'Download DXF', exact: true }).click()
+    const dxfFile = await dxfDownload
+    const dxf = await readFile((await dxfFile.path())!, 'utf8')
+    expect(dxf).toContain('$INSUNITS\n70\n4')
+    expect((dxf.match(/0\nLINE\n/g) ?? []).length).toBeGreaterThan(paths.length)
+    await page.getByRole('button', { name: 'Close dialog', exact: true }).click()
+
+    const swatches = page.waitForEvent('download')
+    await page.getByRole('button', { name: 'Download test swatches SVG', exact: true }).click()
+    const swatchFile = await swatches
+    expect(swatchFile.suggestedFilename()).toContain(`-${pattern.id}-test-swatches.svg`)
+    const swatchSVG = await readFile((await swatchFile.path())!, 'utf8')
+    const samplePaths = await page.evaluate((contents) => {
+      const document = new DOMParser().parseFromString(contents, 'image/svg+xml')
+      return [...document.querySelectorAll('[id^="swatch-"]')].map((sample) =>
+        [...sample.querySelectorAll('path')].map((path) => path.getAttribute('d')!),
+      )
+    }, swatchSVG)
+    expect(samplePaths).toHaveLength(9)
+    expect(
+      samplePaths.every((sample) => sample.some((path) => (path.match(/L/g)?.length ?? 0) > 8)),
+    ).toBe(true)
+    expect(samplePaths.flat().every((path) => !path.endsWith('Z'))).toBe(true)
     expect(swatchSVG).toContain(pattern.label)
     expect(errors).toEqual([])
   })

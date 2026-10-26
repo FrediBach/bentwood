@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { defaultDesign } from './geometry'
+import { defaultDesign, exportSVG } from './geometry'
 import { exportTestSwatchesSVG, getTestSwatchSheetSize } from './test-swatches'
 import type { Design, Point } from './types'
 
@@ -27,10 +27,29 @@ const samples = (svg: string) => [
 ]
 
 describe('test swatch sheet', () => {
-  it.each(['classic', 'graded', 'wave', 'zigzag', 'small-wave', 'honeycomb'] as const)(
+  it.each([
+    'classic',
+    'graded',
+    'wave',
+    'zigzag',
+    'small-wave',
+    'honeycomb',
+    'meander',
+    'meander-wide',
+  ] as const)(
     'exports nine separate %s samples with uncut grip tabs and actual settings',
     (pattern) => {
-      const design: Design = { ...defaultDesign, name: 'Study <one>', pattern }
+      const meander = pattern === 'meander' || pattern === 'meander-wide'
+      const design: Design = {
+        ...defaultDesign,
+        name: 'Study <one>',
+        pattern,
+        ...(meander && {
+          spacing: 3.04,
+          bridge: 1.62,
+          cutLength: pattern === 'meander' ? 22.58 : 33.87,
+        }),
+      }
       const svg = exportTestSwatchesSVG(design)
       const size = getTestSwatchSheetSize(design)
       expect(svg).toContain(`width="${size.width}mm" height="${size.height}mm"`)
@@ -93,7 +112,7 @@ describe('test swatch sheet', () => {
         }
         const label = svg.match(new RegExp(`<g id="label-${i + 1}">([\\s\\S]*?)<\\/g>`))![1]
         expect(label).toContain(`S ${sample[2]} mm`)
-        expect(label).toContain(`B ${sample[3]} mm`)
+        expect(label).toContain(`${meander ? 'E' : 'B'} ${sample[3]} mm`)
         expect(label).toContain(`T ${design.thickness} mm`)
         expect(label).toContain(`K ${design.kerf} mm`)
         for (const text of label.matchAll(/<text x="([\d.]+)" y="([\d.]+)">/g)) {
@@ -102,15 +121,23 @@ describe('test swatch sheet', () => {
           expect(Number(text[2])).toBeGreaterThan(box.y)
           expect(Number(text[2])).toBeLessThan(box.y + box.height)
         }
-        if (pattern === 'wave' || pattern === 'zigzag')
+        if (
+          pattern === 'wave' ||
+          pattern === 'zigzag' ||
+          pattern === 'meander' ||
+          pattern === 'meander-wide'
+        )
           expect(paths.some((path) => new Set(path.map((point) => point.x)).size > 2)).toBe(true)
+        if (pattern === 'meander' || pattern === 'meander-wide') {
+          expect(svg).toContain(pattern === 'meander' ? 'Fine meander' : 'Wide meander')
+          expect(paths.some((path) => path.length > 8)).toBe(true)
+          expect(sample[4]).not.toMatch(/d="[^"]+ Z"/)
+        }
       }
-      expect(coupons.map((coupon) => Number(coupon[2]))).toEqual([
-        2.4, 3, 3.6, 2.4, 3, 3.6, 2.4, 3, 3.6,
-      ])
-      expect(coupons.map((coupon) => Number(coupon[3]))).toEqual([
-        1.6, 1.6, 1.6, 2, 2, 2, 2.4, 2.4, 2.4,
-      ])
+      for (const [i, coupon] of coupons.entries()) {
+        expect(Number(coupon[2])).toBeCloseTo(design.spacing * [0.8, 1, 1.2][i % 3], 3)
+        expect(Number(coupon[3])).toBeCloseTo(design.bridge * [0.8, 1, 1.2][Math.floor(i / 3)], 3)
+      }
     },
   )
 
@@ -140,4 +167,15 @@ describe('test swatch sheet', () => {
   it('uses full-panel manufacturing checks for unsafe sample settings', () => {
     expect(() => exportTestSwatchesSVG({ ...defaultDesign, kerf: 1, spacing: 1 })).toThrow()
   })
+
+  it.each(['meander', 'meander-wide'] as const)(
+    'blocks a %s sheet when a variation consumes the material between slit ends',
+    (pattern) => {
+      const design: Design = { ...defaultDesign, pattern }
+      expect(() => exportSVG(design)).not.toThrow()
+      // The tighter-spacing, wider-separation corner is unsafe even though
+      // the selected full-panel settings leave connecting material.
+      expect(() => exportTestSwatchesSVG(design)).toThrow('connected material')
+    },
+  )
 })

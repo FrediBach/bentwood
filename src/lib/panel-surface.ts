@@ -37,7 +37,7 @@ function offsetJoin(
     : [offset(previous), offset(next)]
 }
 
-/** A continuous, butt-capped stroke with a constant width normal to its path. */
+/** A continuous stroke with a constant width normal to its path. */
 function kerfSlot(cut: CutLine, halfKerf: number, roundOuter = false): Polygon | undefined {
   const points = getCutPoints(cut).filter(
     (point, index, path) =>
@@ -135,7 +135,7 @@ export function createPanelSurface(
   if (halfKerf > 0) {
     for (const cut of cuts) {
       if (cut.y2 <= cut.y1 && !cut.points) continue
-      const slot = kerfSlot(cut, halfKerf, cutouts.length > 0)
+      const slot = kerfSlot(cut, halfKerf, cut.roundCaps || cutouts.length > 0)
       if (slot) slots.push(slot)
     }
   }

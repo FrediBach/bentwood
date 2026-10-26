@@ -31,19 +31,21 @@ The browser tests and OG image generator use Playwright. If its Chromium browser
 1. Choose a starting form, or add straight and curved segments. Select a segment in the diagram or list to edit its length, radius, bend angle, and direction. The segments join tangentially.
 2. Choose a rectangle, square, ellipse, circle, triangle, or custom outline. The sheet’s unrolled length comes from the bend path. Panel width runs across the sheet; squares and circles link width to length.
 3. For a custom outline, drag vertices, double-click an edge to insert a vertex, or edit the selected point’s millimetre coordinates. The outline must remain a simple polygon.
-4. Choose a hinge pattern and set plywood thickness, nominal laser kerf, cut spacing, bridge size, and cut length. Hinge cuts are generated in curved regions. Slit patterns retain staggered internal bridges; Small waves and Honeycomb remove staggered openings to form their interlocking textures.
+4. Choose a hinge pattern and set plywood thickness, nominal laser kerf, cut spacing, bridge size, and cut length. Hinge cuts are generated in curved regions. Slit patterns retain connecting material between cuts; Small waves and Honeycomb remove staggered openings to form their interlocking textures.
 5. Inspect the 3D form, unfold it with the slider, and review the flat outline and cut plan. Download a sheet of test swatches to try the selected pattern in your plywood. Export the panel as SVG or DXF when ready.
 
 ### Hinge patterns
 
-| Pattern         | Geometry and use                                                                                                                                                                                                                              |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Classic**     | The original evenly spaced, straight staggered cuts.                                                                                                                                                                                          |
-| **Graded**      | Straight cuts spaced according to each curved segment’s radius. The smallest radius uses the chosen cut spacing; gentler curves use proportionally wider spacing, capped at twice that value. Designs with only one radius look like Classic. |
-| **Wavy slits**  | Smoothly undulating cut paths for a flowing texture. Wavelength follows cut length plus bridge size; amplitude is derived from spacing to keep adjacent paths apart.                                                                          |
-| **Zigzag**      | Angular cut paths for a geometric texture, using the same staggered bridge layout. Shape dimensions follow the existing cut settings.                                                                                                         |
-| **Small waves** | Staggered slender diamond openings. The wood between the openings forms an interlocking wave texture, matching the reference sample.                                                                                                          |
-| **Honeycomb**   | Staggered curved openings with pointed ends form the open honeycomb texture in the reference sample.                                                                                                                                          |
+| Pattern          | Geometry and use                                                                                                                                                                                                                              |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Classic**      | The original evenly spaced, straight staggered cuts.                                                                                                                                                                                          |
+| **Graded**       | Straight cuts spaced according to each curved segment’s radius. The smallest radius uses the chosen cut spacing; gentler curves use proportionally wider spacing, capped at twice that value. Designs with only one radius look like Classic. |
+| **Wavy slits**   | Smoothly undulating cut paths for a flowing texture. Wavelength follows cut length plus bridge size; amplitude is derived from spacing to keep adjacent paths apart.                                                                          |
+| **Zigzag**       | Angular cut paths for a geometric texture, using the same staggered bridge layout. Shape dimensions follow the existing cut settings.                                                                                                         |
+| **Small waves**  | Staggered slender diamond openings. The wood between the openings forms an interlocking wave texture, matching the reference sample.                                                                                                          |
+| **Honeycomb**    | Staggered curved openings with pointed ends form the open honeycomb texture in the reference sample.                                                                                                                                          |
+| **Fine meander** | Closely repeated rounded slits with overlapping, separated ends follow the meander texture of the reference.                                                                                                                                  |
+| **Wide meander** | Rounded slits use a more open repeat with less overlap between their ends. The suggested settings lengthen each slit for a broader texture.                                                                                                   |
 
 **Small waves** follows the staggered, slender diamond openings in Trotec’s **Kerf 2: Small waves** sample. **Honeycomb** follows the curved, tapered openings in **Kerf 3: Large honeycombs**. Both are based on the manufacturer’s [bending technique reference and cutting template](https://www.troteclaser.com/en-us/helpcenter/materials/application-techniques/bending-technique). The openings are oriented across the panel width to suit Bentwood’s bend direction. Closed contours remove their enclosed scrap in the 3D preview; exports include the cut contours, not filled shapes.
 
@@ -54,9 +56,18 @@ For both opening patterns, **cut length** sets each opening’s long axis, **cut
 | Small waves | 2.4 mm      | 5.25 mm | 15.75 mm   |
 | Honeycomb   | 2.4 mm      | 6.56 mm | 19.68 mm   |
 
-Wavy slits and Zigzag are generated as polylines shared by the flat preview, 3D slots, and exports. Wavy-slit approximation error is bounded by the smaller of 0.01 mm and one quarter of the nominal laser kerf. Every pattern retains connecting material; the preview shows the requested bend but does not predict the force, strength, or minimum radius for a pattern. Test the actual plywood, grain direction, and laser settings before committing to a full panel.
+**Fine meander** follows the stepped, rounded slit geometry of Trotec’s **Kerf 4: Wavy cut line**. **Wide meander** is Bentwood’s variation of that geometry with a more open repeat and less overlap between the slit ends. Selecting either pattern keeps the current cut settings. Fine meander has a **Reference proportions** preset; Wide meander has **Suggested proportions**, which are a starting point for material tests rather than a second manufacturer sample.
 
-**Test swatches** downloads a 1:1 SVG with nine labeled samples of the selected pattern, varying spacing and bridge size by up to 20% around the current values. The settings panel shows the total sheet size before download. Each sample includes grip tabs; Graded samples include two radii so the spacing difference is visible. Black labels are on the separate `engraving-labels` group and must be assigned an engraving operation in the laser software. Red outlines and blue hinge paths are cuts. Keep the physical dimensions unchanged when importing.
+For meanders, **cut spacing** sets the row pitch along the bend, **cut length** sets each rounded slit’s full extent across the sheet width, and **end separation** sets the transverse gap between overlapping slit ends. End separation uses the project’s bridge setting. Fine meander repeats at 0.839189 times the cut length; Wide meander repeats at 0.92 times the cut length. These repeated open slits retain material between their displaced ends.
+
+| Meander preset              | Cut spacing | End separation | Cut length |
+| --------------------------- | ----------- | -------------- | ---------- |
+| Fine: Reference proportions | 3.04 mm     | 1.62 mm        | 22.58 mm   |
+| Wide: Suggested proportions | 3.04 mm     | 1.62 mm        | 33.87 mm   |
+
+Wavy slits, Zigzag, and both meanders are generated as polylines shared by the flat preview, 3D slots, and exports. Wavy-slit approximation error is bounded by the smaller of 0.01 mm and one quarter of the nominal laser kerf. Every pattern retains connecting material; the preview shows the requested bend but does not predict the force, strength, or minimum radius for a pattern. Test the actual plywood, grain direction, and laser settings before committing to a full panel.
+
+**Test swatches** downloads a 1:1 SVG with nine labeled samples of the selected pattern, varying spacing and bridge size (end separation for meanders) by up to 20% around the current values. Meander labels use **E** for transverse end separation; other patterns use **B** for bridge size. The settings panel shows the total sheet size before download. Each sample includes grip tabs; Graded samples include two radii so the spacing difference is visible. All nine variations must pass the material-clearance checks before the sheet can be exported. Black labels are on the separate `engraving-labels` group and must be assigned an engraving operation in the laser software. Red outlines and blue hinge paths are cuts. Keep the physical dimensions unchanged when importing.
 
 The desktop workspace stays within the viewport, with individual controls scrolling when needed. Smaller screens switch between the design, studio, and material panels.
 
@@ -80,7 +91,9 @@ SVG and DXF use **millimetres at 1:1 scale**. Import without resizing and verify
 
 Circular and elliptical exteriors are exported as true curves: SVG arc commands, DXF `CIRCLE` / `ELLIPSE` entities. Polygon exteriors use straight edges. DXF declares millimetre insertion units; SVG includes physical dimensions and a matching `viewBox`.
 
-For slit patterns, hinge cuts reach the outline at both ends of each cut column. Internal bridges remain staggered; an end cut can extend by up to one bridge width beyond the nominal cut length to meet the edge. Cut length and bridge size describe distances across the panel width; the actual laser travel along Wavy slits and Zigzag paths is longer. Sections too narrow to accommodate staggered bridges remain uncut and are reported in the design warnings.
+For Classic, Graded, Wavy slits, and Zigzag, hinge cuts reach the outline at both ends of each cut column. Internal bridges remain staggered; an end cut can extend by up to one bridge width beyond the nominal cut length to meet the edge. Cut length and bridge size describe distances across the panel width; the actual laser travel along Wavy slits and Zigzag paths is longer. Sections too narrow to accommodate staggered bridges remain uncut and are reported in the design warnings.
+
+Fine meander and Wide meander export individual open rounded slits, clipped where they reach the panel boundary. Their actual laser travel follows the rounded path and is longer than the cut length setting. The overlap and transverse separation of their ends retain connecting material.
 
 Small waves and Honeycomb export closed contours for interior openings and open contour pieces where an opening reaches the panel boundary. Boundary pieces do not add duplicate cuts along the outer contour. Honeycomb’s curves are approximated by the same polylines in the preview, SVG, and DXF.
 
@@ -109,6 +122,7 @@ Exports are blocked when the nominal kerf is too wide to preserve a bridge or th
 | `src/lib/cut-path.ts`               | Shared cut-path points and drawing helpers                                                            |
 | `src/lib/cutout-lattice.ts`         | Staggered Small waves and Honeycomb openings, clipped contours, and material-clearance checks         |
 | `src/lib/honeycomb.ts`              | Curved, tapered Honeycomb opening geometry and polyline sampling                                      |
+| `src/lib/meander.ts`                | Rounded open meander motifs, repeat geometry, clipping, and clearance checks                          |
 | `src/lib/test-swatches.ts`          | Labeled SVG test sheets with spacing and bridge variations                                            |
 | `src/lib/geometry.test.ts`          | Geometry and export regression tests                                                                  |
 | `src/lib/panel-surface.ts`          | Kerf subtraction and open-edge boundaries for the 3D mesh                                             |
