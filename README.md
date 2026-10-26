@@ -17,6 +17,7 @@ Open the URL printed by Vite, normally **http://127.0.0.1:5173**. If that port i
 
 ```sh
 npm run typecheck  # TypeScript checks
+npm run doctor     # React Doctor diagnostics
 npm test           # Geometry and export tests
 npm run test:e2e   # Browser workflows and accessibility checks
 npm run build      # Typecheck and production build in dist/
@@ -25,6 +26,8 @@ npm run generate:og # Regenerate the 1200 × 630 social sharing image
 ```
 
 The browser tests and OG image generator use Playwright. If its Chromium browser is missing, install it with `npx playwright install chromium`, then rerun the command. The OG generator renders the actual plywood preview with the app’s branding, writes `public/og-image.png`, and closes its temporary browser and server. The generated PNG is checked in; Vercel builds do not need a browser.
+
+React Doctor is installed as a development dependency. Run `npm run doctor -- --verbose` for file-level diagnostics, or add `--no-score` to skip the remote score API. See the [CLI reference](https://www.react.doctor/docs/reference/cli-reference) for scan options. Review findings before applying fixes: version 0.9.18 mistakes Three.js `Vector3.sub()` calls in `PlywoodPreview` for subscriptions, and flags intentional JSON serialization round trips in persistence tests as deep clones. These findings remain visible, so the command currently exits with errors. The remaining maintainability warnings concern the size of `App` and `OutlineEditor` and the complexity of `App`.
 
 ## Design a panel
 

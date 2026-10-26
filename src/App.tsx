@@ -382,7 +382,7 @@ export default function App() {
   const design = history.present
   const [view, setView] = useState<View>('preview')
   const [selectedId, setSelectedId] = useState<string | null>(
-    design.segments.find((s) => s.type === 'arc')?.id ?? design.segments[0].id,
+    () => design.segments.find((s) => s.type === 'arc')?.id ?? design.segments[0].id,
   )
   const [panel, setPanel] = useState<'path' | 'outline'>('path')
   const [bend, setBend] = useState(1)
@@ -1426,8 +1426,8 @@ export default function App() {
               </p>
               {plan.warnings.length > 0 && (
                 <ul>
-                  {plan.warnings.map((w, i) => (
-                    <li key={i}>{w}</li>
+                  {plan.warnings.map((warning) => (
+                    <li key={warning}>{warning}</li>
                   ))}
                 </ul>
               )}
