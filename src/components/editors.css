@@ -1,0 +1,276 @@
+.bend-path-editor {
+  border: 1px solid #dfe3d9;
+  border-radius: 9px;
+  background: #f4f5ee;
+  overflow: hidden;
+}
+.bend-path-svg {
+  display: block;
+  width: 100%;
+  height: 133px;
+}
+.bend-path-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 11px;
+  background: #f9faf5;
+  border-top: 1px solid #e4e7dd;
+  color: #5a6658;
+  font-size: 11px;
+  font-weight: 500;
+}
+.bend-path-caption span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.bend-segment-hit {
+  cursor: pointer;
+  outline: none;
+}
+.bend-segment-hit:focus-visible {
+  stroke: #b59b40;
+  stroke-opacity: 0.38;
+}
+.outline-editor,
+.cut-plan-view {
+  height: 100%;
+  width: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 30px 38px 22px;
+  overflow: hidden;
+}
+.drawing-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex: none;
+}
+.drawing-eyebrow {
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: 1.7px;
+  color: #64715e;
+}
+.drawing-heading h2 {
+  font-size: 23px;
+  font-weight: 500;
+  letter-spacing: -0.8px;
+  color: #263e2d;
+  margin: 7px 0 0;
+}
+.drawing-scale {
+  font-size: 11px;
+  color: #5c6858;
+  white-space: nowrap;
+}
+.outline-drawing-area {
+  flex: 1;
+  min-height: 80px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.outline-svg {
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+  overflow: visible;
+  touch-action: none;
+}
+.outline-vertex-hit {
+  cursor: grab;
+  outline: none;
+  touch-action: none;
+}
+.outline-vertex-hit:active {
+  cursor: grabbing;
+}
+.outline-vertex-hit:focus-visible {
+  stroke: #bd9634;
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+}
+.outline-edge-hit {
+  cursor: crosshair;
+}
+.vertex-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border: 1px solid #d9dfd1;
+  background: rgba(255, 255, 250, 0.9);
+  border-radius: 9px;
+  align-self: center;
+  flex-wrap: wrap;
+  flex: none;
+}
+.vertex-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #34543c;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.vertex-controls label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: #5c6858;
+}
+.vertex-controls input {
+  width: 63px;
+  border: 1px solid #c8d1c0;
+  border-radius: 5px;
+  background: #fffef9;
+  padding: 5px 4px 5px 7px;
+  font-family: inherit;
+  font-size: 12px;
+  color: #2c4031;
+}
+.vertex-controls label > span {
+  font-size: 10px;
+}
+.editor-tool-button,
+.outline-custom-button {
+  appearance: none;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #cfd8c5;
+  border-radius: 6px;
+  background: #f9fbf4;
+  color: #34543c;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  min-height: 32px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.editor-tool-button:hover,
+.outline-custom-button:hover {
+  background: #e8eddf;
+}
+.editor-tool-button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.editor-delete-point {
+  padding: 6px 8px;
+}
+.outline-custom-button {
+  align-self: center;
+  gap: 9px;
+  padding: 10px 15px;
+  flex: none;
+}
+.drawing-instructions {
+  font-size: 11px;
+  text-align: center;
+  color: #596651;
+  line-height: 1.6;
+  margin: 12px 0 0;
+  min-height: 18px;
+  flex: none;
+}
+.plan-dimensions {
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.2px;
+}
+.cut-plan-svg {
+  width: 100%;
+  height: 100%;
+  flex: 1;
+  min-height: 60px;
+}
+.cut-plan-legend {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+  font-size: 11px;
+  color: #54624c;
+  padding: 10px 0 0;
+  flex: none;
+  flex-wrap: wrap;
+}
+.cut-plan-legend > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.cut-plan-legend i {
+  display: inline-block;
+  width: 15px;
+  height: 2px;
+}
+.outline-legend-swatch {
+  background: #a8493f;
+}
+.hinge-legend-swatch {
+  background: #3c699a;
+}
+.cut-plan-count {
+  margin-left: auto;
+}
+.cut-plan-thumbnail {
+  width: 100%;
+  height: 100%;
+  min-height: 60px;
+  overflow: hidden;
+}
+.cut-plan-thumbnail svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+@media (max-width: 1100px) {
+  .outline-editor,
+  .cut-plan-view {
+    padding: 25px 22px 18px;
+  }
+  .drawing-scale {
+    display: none;
+  }
+  .vertex-controls {
+    gap: 8px;
+    padding: 9px;
+  }
+  .cut-plan-legend {
+    gap: 13px;
+  }
+  .cut-plan-count {
+    margin-left: 0;
+  }
+}
+@media (max-width: 650px) {
+  .outline-editor,
+  .cut-plan-view {
+    padding: 20px 15px 15px;
+  }
+  .drawing-heading h2 {
+    font-size: 20px;
+  }
+  .vertex-label {
+    width: 100%;
+    justify-content: center;
+  }
+  .drawing-instructions {
+    font-size: 11px;
+  }
+  .cut-plan-legend {
+    font-size: 10px;
+  }
+}
