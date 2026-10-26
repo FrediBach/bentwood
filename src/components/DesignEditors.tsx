@@ -22,7 +22,7 @@ function CoordinateField({
   max,
   onCommit,
 }: {
-  axis: 'X' | 'Y'
+  axis: 'X' | 'Y' | 'Corner radius'
   value: number
   max: number
   onCommit: (value: number) => boolean
@@ -51,7 +51,11 @@ function CoordinateField({
     <label>
       {axis}{' '}
       <input
-        aria-label={`Selected point ${axis} in millimeters`}
+        aria-label={
+          axis === 'Corner radius'
+            ? 'Corner radius in millimeters'
+            : `Selected point ${axis} in millimeters`
+        }
         type="number"
         min="0"
         max={max}
@@ -272,7 +276,7 @@ export function OutlineEditor({
     position.x = event.clientX
     position.y = event.clientY
     const transformed = position.matrixTransform(matrix.inverse())
-    return { x: transformed.x / length, y: transformed.y / width }
+    return { x: transformed.x / length, y: 1 - transformed.y / width }
   }
   const insertPoint = (index: number) => {
     if (custom.length >= 128) {
@@ -302,8 +306,8 @@ export function OutlineEditor({
     const direction = {
       ArrowLeft: [-1, 0],
       ArrowRight: [1, 0],
-      ArrowUp: [0, -1],
-      ArrowDown: [0, 1],
+      ArrowUp: [0, 1],
+      ArrowDown: [0, -1],
     }[event.key]
     if (direction) {
       event.preventDefault()
@@ -332,7 +336,7 @@ export function OutlineEditor({
           ref={svgRef}
           viewBox={`${-padding} ${-padding} ${length + padding * 2} ${width + padding * 2}`}
           className="outline-svg"
-          aria-label={`Flat panel outline, ${mm(length)} by ${mm(width)} millimeters${isCustom ? '. Drag a vertex or use the arrow keys to adjust it.' : ''}`}
+          aria-label={`Flat panel outline, ${mm(length)} by ${mm(width)} millimeters. Y increases upward, as in the 3D preview.${isCustom ? ' Drag a vertex or use the arrow keys to adjust it.' : ''}`}
         >
           <defs>
             <pattern id={gridId} width="10" height="10" patternUnits="userSpaceOnUse">
@@ -358,13 +362,27 @@ export function OutlineEditor({
           />
           <DimensionLines length={length} width={width} padding={padding} />
           <polygon
-            points={pointString(outline)}
+            points={pointString(outline.map((point) => ({ x: point.x, y: width - point.y })))}
+            data-outline-contour=""
             fill="#e9d9b6"
             fillOpacity="0.68"
             stroke="#4a3025"
             strokeWidth="2"
             vectorEffect="non-scaling-stroke"
           />
+          {isCustom && design.outlineCornerRadius > 0 && (
+            <polygon
+              points={pointString(
+                custom.map((point) => ({ x: point.x * length, y: (1 - point.y) * width })),
+              )}
+              fill="none"
+              stroke="#9b8872"
+              strokeWidth="1"
+              strokeDasharray="3 4"
+              vectorEffect="non-scaling-stroke"
+              pointerEvents="none"
+            />
+          )}
           {isCustom &&
             custom.map((point, index) => {
               const next = custom[(index + 1) % custom.length]
@@ -372,9 +390,9 @@ export function OutlineEditor({
                 <g key={index}>
                   <line
                     x1={point.x * length}
-                    y1={point.y * width}
+                    y1={(1 - point.y) * width}
                     x2={next.x * length}
-                    y2={next.y * width}
+                    y2={(1 - next.y) * width}
                     stroke="transparent"
                     strokeWidth="16"
                     vectorEffect="non-scaling-stroke"
@@ -385,7 +403,7 @@ export function OutlineEditor({
                   </line>
                   <circle
                     cx={point.x * length}
-                    cy={point.y * width}
+                    cy={(1 - point.y) * width}
                     r={marker * 2}
                     fill="transparent"
                     className="outline-vertex-hit"
@@ -416,7 +434,7 @@ export function OutlineEditor({
                   />
                   <circle
                     cx={point.x * length}
-                    cy={point.y * width}
+                    cy={(1 - point.y) * width}
                     r={marker}
                     fill={selectedIndex === index ? '#4a3025' : '#fffbf2'}
                     stroke="#4a3025"
@@ -427,7 +445,7 @@ export function OutlineEditor({
                   {selectedIndex === index && (
                     <text
                       x={point.x * length + marker * 1.9}
-                      y={point.y * width - marker * 1.9}
+                      y={(1 - point.y) * width - marker * 1.9}
                       fill="#4a3025"
                       fontSize={marker * 2.4}
                       fontWeight="600"
@@ -442,48 +460,64 @@ export function OutlineEditor({
         </svg>
       </div>
       {isCustom && selectedPoint ? (
-        <div className="vertex-controls">
-          <span className="vertex-label">
-            <MousePointer2 size={15} /> Point {selectedIndex + 1}
-          </span>
-          <CoordinateField
-            key={`x-${selectedIndex}`}
-            axis="X"
-            value={selectedPoint.x * length}
-            max={length}
-            onCommit={(value) =>
-              updatePoint(selectedIndex, { ...selectedPoint, x: value / length })
-            }
-          />
-          <CoordinateField
-            key={`y-${selectedIndex}`}
-            axis="Y"
-            value={selectedPoint.y * width}
-            max={width}
-            onCommit={(value) => updatePoint(selectedIndex, { ...selectedPoint, y: value / width })}
-          />
-          <button
-            type="button"
-            className="editor-tool-button"
-            disabled={custom.length >= 128}
-            title={
-              custom.length >= 128
-                ? 'Maximum 128 points reached'
-                : 'Insert a point after the selected point'
-            }
-            onClick={() => insertPoint(selectedIndex)}
-          >
-            <Plus size={15} /> Add point
-          </button>
-          <button
-            type="button"
-            className="editor-tool-button editor-delete-point"
-            disabled={custom.length <= 3}
-            onClick={() => removePoint(selectedIndex)}
-            aria-label="Remove selected point"
-          >
-            <Trash2 size={15} />
-          </button>
+        <div className="outline-tools">
+          <div className="vertex-controls">
+            <span className="vertex-label">
+              <MousePointer2 size={15} /> Point {selectedIndex + 1}
+            </span>
+            <CoordinateField
+              key={`x-${selectedIndex}`}
+              axis="X"
+              value={selectedPoint.x * length}
+              max={length}
+              onCommit={(value) =>
+                updatePoint(selectedIndex, { ...selectedPoint, x: value / length })
+              }
+            />
+            <CoordinateField
+              key={`y-${selectedIndex}`}
+              axis="Y"
+              value={selectedPoint.y * width}
+              max={width}
+              onCommit={(value) =>
+                updatePoint(selectedIndex, { ...selectedPoint, y: value / width })
+              }
+            />
+            <button
+              type="button"
+              className="editor-tool-button"
+              disabled={custom.length >= 128}
+              title={
+                custom.length >= 128
+                  ? 'Maximum 128 points reached'
+                  : 'Insert a point after the selected point'
+              }
+              onClick={() => insertPoint(selectedIndex)}
+            >
+              <Plus size={15} /> Add point
+            </button>
+            <button
+              type="button"
+              className="editor-tool-button editor-delete-point"
+              disabled={custom.length <= 3}
+              onClick={() => removePoint(selectedIndex)}
+              aria-label="Remove selected point"
+            >
+              <Trash2 size={15} />
+            </button>
+          </div>
+          <div className="corner-controls">
+            <CoordinateField
+              axis="Corner radius"
+              value={design.outlineCornerRadius}
+              max={1000}
+              onCommit={(value) => {
+                onChange({ ...design, outlineCornerRadius: value })
+                return true
+              }}
+            />
+            <span className="corner-hint">0 for sharp corners · Limited to fit</span>
+          </div>
         </div>
       ) : (
         <button
@@ -493,6 +527,7 @@ export function OutlineEditor({
             onChange({
               ...design,
               outline: 'custom',
+              outlineCornerRadius: 0,
               width,
               customOutline: outline.map((point) => ({ x: point.x / length, y: point.y / width })),
             })
@@ -505,7 +540,7 @@ export function OutlineEditor({
       <p className="drawing-instructions" aria-live="polite">
         {message ||
           (isCustom
-            ? 'Drag points to shape your panel. Double-click an edge to add a point. Arrow keys move 1 mm.'
+            ? `Drag points to shape your panel. Double-click ${design.outlineCornerRadius > 0 ? 'a dashed guide' : 'an edge'} to add a point. Arrow keys move 1 mm.`
             : 'Choose a shape in the sidebar, or customize its points for something entirely your own.')}
       </p>
     </div>
@@ -555,37 +590,40 @@ export function CutPlanView({
           />
         )}
         {large && <DimensionLines length={plan.length} width={plan.width} padding={padding} />}
-        {design.outline === 'circle' || design.outline === 'ellipse' ? (
-          <ellipse
-            cx={plan.length / 2}
-            cy={plan.width / 2}
-            rx={plan.length / 2}
-            ry={plan.width / 2}
-            fill="#fffdf5"
-            stroke="#a8493f"
-            strokeWidth={large ? 1.6 : 1.2}
-            vectorEffect="non-scaling-stroke"
-          />
-        ) : (
-          <polygon
-            points={pointString(plan.outline)}
-            fill="#fffdf5"
-            stroke="#a8493f"
-            strokeWidth={large ? 1.6 : 1.2}
-            strokeLinejoin="round"
-            vectorEffect="non-scaling-stroke"
-          />
-        )}
-        <g stroke="#3c699a" strokeWidth={large ? 0.9 : 0.6} vectorEffect="non-scaling-stroke">
-          {plan.cuts.map((cut, index) => (
-            <path
-              key={index}
-              d={cutPathData(cut)}
-              fill="none"
-              data-hinge-cut=""
+        <g transform={`translate(0 ${plan.width}) scale(1 -1)`}>
+          {design.outline === 'circle' || design.outline === 'ellipse' ? (
+            <ellipse
+              cx={plan.length / 2}
+              cy={plan.width / 2}
+              rx={plan.length / 2}
+              ry={plan.width / 2}
+              fill="#fffdf5"
+              stroke="#a8493f"
+              strokeWidth={large ? 1.6 : 1.2}
               vectorEffect="non-scaling-stroke"
             />
-          ))}
+          ) : (
+            <polygon
+              points={pointString(plan.outline)}
+              data-outline-contour=""
+              fill="#fffdf5"
+              stroke="#a8493f"
+              strokeWidth={large ? 1.6 : 1.2}
+              strokeLinejoin="round"
+              vectorEffect="non-scaling-stroke"
+            />
+          )}
+          <g stroke="#3c699a" strokeWidth={large ? 0.9 : 0.6} vectorEffect="non-scaling-stroke">
+            {plan.cuts.map((cut, index) => (
+              <path
+                key={index}
+                d={cutPathData(cut)}
+                fill="none"
+                data-hinge-cut=""
+                vectorEffect="non-scaling-stroke"
+              />
+            ))}
+          </g>
         </g>
       </svg>
       {large && (

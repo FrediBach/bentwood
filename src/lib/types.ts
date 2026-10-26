@@ -11,6 +11,7 @@ export type Design = {
   outline: OutlineKind
   width: number
   customOutline: Point[]
+  outlineCornerRadius: number
   thickness: number
   material: 'birch' | 'walnut' | 'basswood'
   spacing: number

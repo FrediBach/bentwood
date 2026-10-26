@@ -1,6 +1,15 @@
 import { test, expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { readFile } from 'node:fs/promises'
+import { defaultDesign } from '../src/lib/geometry'
+
+const asymmetricOutline = [
+  { x: 0, y: 0 },
+  { x: 1, y: 0 },
+  { x: 1, y: 1 },
+  { x: 0.8, y: 1 },
+  { x: 0, y: 0.4 },
+]
 
 test('preview, desktop sizing, accessibility and camera controls', async ({ page }) => {
   const errors: string[] = []
@@ -90,7 +99,7 @@ test('custom outline keyboard editing and exact cut downloads', async ({ page })
   expect(point).not.toBeNull()
   await page.mouse.move(point!.x + point!.width / 2, point!.y + point!.height / 2)
   await page.mouse.down()
-  await page.mouse.move(point!.x + point!.width / 2 + 25, point!.y + point!.height / 2 - 25, {
+  await page.mouse.move(point!.x + point!.width / 2 + 25, point!.y + point!.height / 2 + 25, {
     steps: 8,
   })
   await page.mouse.up()
@@ -132,6 +141,160 @@ test('custom outline keyboard editing and exact cut downloads', async ({ page })
   await page.getByRole('button', { name: 'Cut plan', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'From a sheet to a shape.' })).toBeVisible()
   await page.screenshot({ path: 'test-results/cut-plan.png' })
+})
+
+test('custom outline height agrees with the preview and screen movement', async ({ page }) => {
+  await page.goto('/')
+  await page.getByLabel('Import project file').setInputFiles({
+    name: 'asymmetric.bentwood.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(
+      JSON.stringify({ ...defaultDesign, outline: 'custom', customOutline: asymmetricOutline }),
+    ),
+  })
+  await page.getByRole('button', { name: 'Flat outline', exact: true }).click()
+  const vertices = page.getByRole('button', { name: /Vertex \d,/ })
+  await expect(vertices).toHaveCount(asymmetricOutline.length)
+  const positions = await Promise.all(
+    Array.from({ length: asymmetricOutline.length }, (_, index) =>
+      vertices.nth(index).boundingBox(),
+    ),
+  )
+  // The saved y=0 edge is the straight bottom in 3D; x still runs left to right.
+  expect(positions[0]!.y).toBeCloseTo(positions[1]!.y, 5)
+  expect(positions[0]!.y).toBeGreaterThan(positions[4]!.y)
+  expect(positions[4]!.y).toBeGreaterThan(positions[3]!.y)
+  expect(positions[0]!.x).toBeLessThan(positions[1]!.x)
+
+  const slopedCorner = vertices.nth(4)
+  const x = page.getByLabel('Selected point X in millimeters')
+  const y = page.getByLabel('Selected point Y in millimeters')
+  await slopedCorner.focus()
+  await expect(y).toHaveValue('56')
+  await slopedCorner.press('ArrowUp')
+  await expect(y).toHaveValue('57')
+  const raised = (await slopedCorner.boundingBox())!
+  expect(raised.y).toBeLessThan(positions[4]!.y)
+  await page.mouse.move(raised.x + raised.width / 2, raised.y + raised.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(raised.x + raised.width / 2 + 20, raised.y + raised.height / 2 - 20, {
+    steps: 6,
+  })
+  await page.mouse.up()
+  expect(Number(await x.inputValue())).toBeGreaterThan(0)
+  expect(Number(await y.inputValue())).toBeGreaterThan(57)
+  await page.getByRole('button', { name: 'Undo (⌘ / Ctrl Z)', exact: true }).click()
+  await expect(x).toHaveValue('0')
+  await expect(y).toHaveValue('57')
+  await page.getByRole('button', { name: 'Undo (⌘ / Ctrl Z)', exact: true }).click()
+  await expect(y).toHaveValue('56')
+
+  await page.getByRole('button', { name: 'Cut plan', exact: true }).click()
+  const planPoints = await page
+    .locator('.cut-plan-view [data-outline-contour]')
+    .evaluate((element) => {
+      const polygon = element as SVGPolygonElement
+      const transform = polygon.getCTM()!
+      return Array.from(polygon.points, (point) => ({
+        x: point.matrixTransform(transform).x,
+        y: point.matrixTransform(transform).y,
+      }))
+    })
+  expect(planPoints[0].y).toBeCloseTo(planPoints[1].y, 5)
+  expect(planPoints[0].y).toBeGreaterThan(planPoints[4].y)
+  expect(planPoints[4].y).toBeGreaterThan(planPoints[3].y)
+})
+
+test('corner rounding survives undo, saving and export without replacing editable points', async ({
+  page,
+}) => {
+  test.setTimeout(45000)
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.goto('/')
+  await page.getByLabel('Import project file').setInputFiles({
+    name: 'rounded-outline.bentwood.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(
+      JSON.stringify({ ...defaultDesign, outline: 'custom', customOutline: asymmetricOutline }),
+    ),
+  })
+  await page.getByRole('button', { name: 'Flat outline', exact: true }).click()
+  const radius = page.getByRole('spinbutton', { name: 'Corner radius in millimeters', exact: true })
+  const contour = page.locator('.outline-svg [data-outline-contour]')
+  await expect(radius).toHaveValue('0')
+  const sharp = await contour.getAttribute('points')
+  await radius.fill('12.5')
+  await radius.press('Enter')
+  await expect(radius).toHaveValue('12.5')
+  await expect(contour).not.toHaveAttribute('points', sharp!)
+  const rounded = await contour.getAttribute('points')
+  expect(rounded!.trim().split(/\s+/).length).toBeGreaterThan(20)
+  await expect(page.getByRole('button', { name: /Vertex \d,/ })).toHaveCount(
+    asymmetricOutline.length,
+  )
+  await page.getByRole('button', { name: 'Undo (⌘ / Ctrl Z)', exact: true }).click()
+  await expect(radius).toHaveValue('0')
+  await expect(contour).toHaveAttribute('points', sharp!)
+  await page.getByRole('button', { name: 'Redo (⌘ / Ctrl Shift Z)', exact: true }).click()
+  await expect(radius).toHaveValue('12.5')
+  await expect(contour).toHaveAttribute('points', rounded!)
+
+  const saved = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save project file', exact: true }).click()
+  const file = await saved
+  const project = JSON.parse(await readFile((await file.path())!, 'utf8'))
+  expect(project.outlineCornerRadius).toBe(12.5)
+  expect(project.customOutline).toEqual(asymmetricOutline)
+  await page.reload()
+  await expect(page.locator('.plywood-preview canvas')).toBeVisible()
+  await page.screenshot({ path: 'test-results/rounded-outline-bent-preview.png' })
+  await page.getByRole('button', { name: 'Flat outline', exact: true }).click()
+  await expect(radius).toHaveValue('12.5')
+  await expect(contour).toHaveAttribute('points', rounded!)
+  await page.getByRole('button', { name: 'Cut plan', exact: true }).click()
+  expect(
+    await page
+      .locator('.cut-plan-view [data-outline-contour]')
+      .evaluate((element) => (element as SVGPolygonElement).points.numberOfItems),
+  ).toBeGreaterThan(20)
+  await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
+  for (const format of ['SVG', 'DXF']) {
+    const pending = page.waitForEvent('download')
+    await page.getByRole('button', { name: `Download ${format}`, exact: true }).click()
+    const download = await pending
+    const contents = await readFile((await download.path())!, 'utf8')
+    if (format === 'SVG') {
+      const outline = await page.evaluate(
+        (svg) =>
+          new DOMParser()
+            .parseFromString(svg, 'image/svg+xml')
+            .querySelector('#outer-contour path')!
+            .getAttribute('d')!,
+        contents,
+      )
+      expect((outline.match(/L/g) ?? []).length).toBeGreaterThan(20)
+    } else {
+      expect((contents.match(/0\nVERTEX\n/g) ?? []).length).toBeGreaterThan(20)
+    }
+  }
+  await page.getByRole('button', { name: 'Close dialog', exact: true }).click()
+  await page.getByRole('button', { name: 'Flat outline', exact: true }).click()
+  const accessibility = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
+    .analyze()
+  expect(
+    accessibility.violations.map((violation) => ({
+      id: violation.id,
+      nodes: violation.nodes.map((node) => ({ target: node.target, summary: node.failureSummary })),
+    })),
+  ).toEqual([])
+  await page.screenshot({ path: 'test-results/rounded-outline-desktop.png' })
+  await page.setViewportSize({ width: 390, height: 844 })
+  await expect(radius).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390)
+  await page.screenshot({ path: 'test-results/rounded-outline-mobile.png' })
+  expect(errors).toEqual([])
 })
 
 test('mobile panels and accessible export dialog', async ({ page }) => {

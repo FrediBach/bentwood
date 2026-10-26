@@ -98,18 +98,34 @@
 .outline-edge-hit {
   cursor: crosshair;
 }
+.outline-tools {
+  align-self: center;
+  flex: none;
+  max-width: 100%;
+  border: 1px solid #e0d3bd;
+  background: rgba(251, 246, 234, 0.95);
+  border-radius: 9px;
+}
 .vertex-controls {
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 12px;
   padding: 12px 16px;
-  border: 1px solid #e0d3bd;
-  background: rgba(251, 246, 234, 0.95);
-  border-radius: 9px;
-  align-self: center;
   flex-wrap: wrap;
-  flex: none;
+}
+.corner-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 10px 16px;
+  border-top: 1px solid #e0d3bd;
+}
+.corner-hint {
+  color: #685f58;
+  font-size: 10px;
 }
 .vertex-label {
   display: flex;
@@ -120,14 +136,16 @@
   font-weight: 600;
   white-space: nowrap;
 }
-.vertex-controls label {
+.vertex-controls label,
+.corner-controls label {
   display: flex;
   align-items: center;
   gap: 5px;
   font-size: 11px;
   color: #685f58;
 }
-.vertex-controls input {
+.vertex-controls input,
+.corner-controls input {
   width: 63px;
   border: 1px solid #d0bea3;
   border-radius: 5px;
@@ -137,7 +155,8 @@
   font-size: 12px;
   color: #40342c;
 }
-.vertex-controls label > span {
+.vertex-controls label > span,
+.corner-controls label > span {
   font-size: 10px;
 }
 .editor-tool-button,

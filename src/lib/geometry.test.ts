@@ -315,7 +315,7 @@ describe('outlines and staggered hinges', () => {
 })
 
 describe('manufacturing export', () => {
-  it('exports exact millimetre bounds and every hinge toolpath without scale transforms', () => {
+  it('exports exact millimetre bounds and every hinge toolpath with Y increasing upwards', () => {
     const input = design({ name: 'A <test> & panel' })
     const plan = createCutPlan(input)
     const svg = exportSVG(input)
@@ -327,13 +327,14 @@ describe('manufacturing export', () => {
     expect(svg).toContain('no kerf compensation')
     expect(svg).toContain('d="M76.5 0 V24"')
     expect(svg).toContain('V140"')
+    expect(svg.match(/transform="translate\(0 140\) scale\(1 -1\)"/g)).toHaveLength(2)
     const dxf = exportDXF(input)
     expect(dxf).toContain('$INSUNITS\n70\n4')
     expect(dxf.match(/0\nLINE\n/g)).toHaveLength(plan.cuts.length)
     expect(dxf).toContain('POLYLINE\n100\nAcDbEntity\n8\nOUTER_CONTOUR')
     expect(dxf).toContain('70\n1')
-    expect(dxf).toContain('10\n76.5\n20\n140\n30\n0\n11\n76.5\n21\n116')
-    expect(dxf).toContain('21\n0\n31\n0')
+    expect(dxf).toContain('10\n76.5\n20\n0\n30\n0\n11\n76.5\n21\n24')
+    expect(dxf).toContain('21\n140\n31\n0')
   })
   it('exports circular and elliptical contours as actual curves', () => {
     expect(exportSVG(design({ outline: 'circle' }))).toContain(' A153.539816 153.539816 ')

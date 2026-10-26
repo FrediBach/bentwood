@@ -30,7 +30,7 @@ The browser tests and OG image generator use Playwright. If its Chromium browser
 
 1. Choose a starting form, or add straight and curved segments. Select a segment in the diagram or list to edit its length, radius, bend angle, and direction. The segments join tangentially.
 2. Choose a rectangle, square, ellipse, circle, triangle, or custom outline. The sheet’s unrolled length comes from the bend path. Panel width runs across the sheet; squares and circles link width to length.
-3. For a custom outline, drag vertices, double-click an edge to insert a vertex, or edit the selected point’s millimetre coordinates. The outline must remain a simple polygon.
+3. For a custom outline, drag vertices, double-click an edge to insert a vertex, or edit the selected point’s millimetre coordinates. Y increases upward, matching the 3D preview. Set **Corner radius** to round all corners; 0 keeps them sharp. The radius is limited locally to fit short edges and narrow sections. Dashed guides preserve the editable vertices when rounding is on. The outline must remain a simple polygon.
 4. Choose a hinge pattern and set plywood thickness, nominal laser kerf, cut spacing, bridge size, and cut length. Hinge cuts are generated in curved regions. Slit patterns retain connecting material between cuts; Honeycomb removes staggered openings to form their interlocking textures.
 5. Inspect the 3D form, unfold it with the slider, and review the flat outline and cut plan. Download a sheet of test swatches to try the selected pattern in your plywood. Export the panel as SVG or DXF when ready.
 
@@ -85,7 +85,7 @@ SVG and DXF use **millimetres at 1:1 scale**. Import without resizing and verify
 | Exterior          | Red `outer-contour` group | `OUTER_CONTOUR` layer |
 | Living-hinge cuts | Blue `hinge-cuts` group   | `HINGE_CUTS` layer    |
 
-Circular and elliptical exteriors are exported as true curves: SVG arc commands, DXF `CIRCLE` / `ELLIPSE` entities. Polygon exteriors use straight edges. DXF declares millimetre insertion units; SVG includes physical dimensions and a matching `viewBox`.
+Circular and elliptical exteriors are exported as true curves: SVG arc commands, DXF `CIRCLE` / `ELLIPSE` entities. Custom corner fillets use polylines with a maximum chord error of 0.01 mm, shared by the preview and exports. Other polygon edges remain straight. The flat outline, cut plan, SVG, and DXF use the same upright orientation as the 3D model. DXF declares millimetre insertion units; SVG includes physical dimensions and a matching `viewBox`.
 
 For Classic, Graded, Wavy slits, and Zigzag, hinge cuts reach the outline at both ends of each cut column. Internal bridges remain staggered; an end cut can extend by up to one bridge width beyond the nominal cut length to meet the edge. Cut length and bridge size describe distances across the panel width; the actual laser travel along Wavy slits and Zigzag paths is longer. Sections too narrow to accommodate staggered bridges remain uncut and are reported in the design warnings.
 
@@ -101,7 +101,7 @@ Exports are blocked when the nominal kerf is too wide to preserve a bridge or th
 
 - The bend path is a sequence of straight lines and circular arcs, measured at the sheet’s neutral axis. Unrolled length is the sum of straight lengths and arc lengths (`radius × angle in radians`).
 - The model represents a continuous sheet bent in one direction along that path. It supports developable forms, including concave panel outlines, but not compound curvature, twisting, branching, or multiple joined panels.
-- Custom outlines are simple polygons with up to 128 vertices. User-defined interior holes, SVG import, and freehand or Bézier outline curves are not supported; Honeycomb generates its own hinge openings. Self-intersecting and degenerate polygons are rejected.
+- Custom outlines have up to 128 editable vertices, with optional rounded corners. User-defined interior holes, SVG import, and freehand or Bézier outline curves are not supported; Honeycomb generates its own hinge openings. Self-intersecting and degenerate polygons are rejected. Older projects without a corner radius retain sharp corners.
 - The 3D surface is tessellated. Circle and ellipse previews use 128 outline vertices; their exported exterior curves remain analytic. Hinge endpoints intersect the actual polygon edges or the analytic circle/ellipse, so exported cuts reach the exported contour.
 - The preview preserves neutral-axis length while unfolding. It shows thickness, grain appearance, exposed plywood layers, and laser slots. Slots that meet the edge are subtracted from the contour, including its thickness walls. Above 2,500 cuts or 20,000 polyline segments, it displays every cut as a surface centre line and labels the simplified view; the export still includes the full pattern.
 - Material selection changes appearance. It is not a calibrated material model. Strength, glue layers, grain direction, hinge torsion, springback, heat effects, and assembly forces are not simulated.

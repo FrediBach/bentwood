@@ -70,6 +70,7 @@ export const defaultDesign: Design = {
     { x: 1, y: 1 },
     { x: 0, y: 1 },
   ],
+  outlineCornerRadius: 0,
   thickness: 3,
   material: 'birch',
   spacing: 3,
@@ -143,7 +144,10 @@ export function getOutline(design: Design): Point[] {
       { x: length, y: width },
     ]
   if (design.outline === 'custom')
-    return design.customOutline.map((point) => ({ x: point.x * length, y: point.y * width }))
+    return roundPolygonCorners(
+      design.customOutline.map((point) => ({ x: point.x * length, y: point.y * width })),
+      design.outlineCornerRadius,
+    )
   return [
     { x: 0, y: 0 },
     { x: length, y: 0 },
@@ -194,6 +198,78 @@ export function isSimplePolygon(points: Point[]): boolean {
     }
   }
   return Math.abs(area) > EPS
+}
+
+/**
+ * Circular fillets in physical sheet units, with a maximum chord error of 0.01 mm.
+ * Each corner is limited locally so its tangent points fit the adjoining edges.
+ * Keeping its corner triangle inside a disjoint neighbourhood also prevents
+ * fillets from crossing another edge in narrow or deeply concave outlines.
+ */
+export function roundPolygonCorners(points: Point[], radius: number): Point[] {
+  if (!Number.isFinite(radius) || radius <= 0 || !isSimplePolygon(points)) return points
+  const rounded: Point[] = []
+  const append = (point: Point) => {
+    if (!rounded.length || distance(rounded.at(-1)!, point) > EPS) rounded.push(point)
+  }
+  for (let i = 0; i < points.length; i++) {
+    const point = points[i]
+    const previous = points[(i + points.length - 1) % points.length]
+    const next = points[(i + 1) % points.length]
+    const before = distance(previous, point)
+    const after = distance(point, next)
+    const incoming = { x: (point.x - previous.x) / before, y: (point.y - previous.y) / before }
+    const outgoing = { x: (next.x - point.x) / after, y: (next.y - point.y) / after }
+    const turn = Math.atan2(
+      incoming.x * outgoing.y - incoming.y * outgoing.x,
+      incoming.x * outgoing.x + incoming.y * outgoing.y,
+    )
+    if (Math.abs(turn) < EPS) {
+      append(point)
+      continue
+    }
+    let limit = Math.min(before, after) / 2
+    for (let j = 0; j < points.length; j++) {
+      if (j === i || (j + 1) % points.length === i) continue
+      const a = points[j]
+      const b = points[(j + 1) % points.length]
+      const dx = b.x - a.x
+      const dy = b.y - a.y
+      const t = Math.max(
+        0,
+        Math.min(1, ((point.x - a.x) * dx + (point.y - a.y) * dy) / (dx * dx + dy * dy)),
+      )
+      limit = Math.min(limit, Math.hypot(point.x - a.x - t * dx, point.y - a.y - t * dy) / 2)
+    }
+    const tangentRatio = Math.tan(Math.abs(turn) / 2)
+    const tangent = Math.min(radius * tangentRatio, limit)
+    const localRadius = tangent / tangentRatio
+    if (tangent <= EPS || localRadius <= EPS) {
+      append(point)
+      continue
+    }
+    const start = { x: point.x - incoming.x * tangent, y: point.y - incoming.y * tangent }
+    const end = { x: point.x + outgoing.x * tangent, y: point.y + outgoing.y * tangent }
+    const direction = Math.sign(turn)
+    const center = {
+      x: start.x - incoming.y * localRadius * direction,
+      y: start.y + incoming.x * localRadius * direction,
+    }
+    const startAngle = Math.atan2(start.y - center.y, start.x - center.x)
+    const maxAngle = 2 * Math.acos(Math.max(-1, 1 - 0.01 / localRadius))
+    const steps = Math.max(2, Math.ceil(Math.abs(turn) / maxAngle))
+    append(start)
+    for (let step = 1; step < steps; step++) {
+      const angle = startAngle + (turn * step) / steps
+      append({
+        x: center.x + localRadius * Math.cos(angle),
+        y: center.y + localRadius * Math.sin(angle),
+      })
+    }
+    append(end)
+  }
+  if (rounded.length > 1 && distance(rounded[0], rounded.at(-1)!) <= EPS) rounded.pop()
+  return rounded
 }
 
 /** All inside spans where a vertical line meets a possibly concave polygon. */
@@ -508,7 +584,7 @@ export function exportSVG(design: Design): string {
         .map((point, i) => `${i ? 'L' : 'M'}${number(point.x)} ${number(point.y)}`)
         .join(' ') + ' Z'
   const slots = plan.cuts.map((cut) => `    <path d="${cutPathData(cut)}"/>`).join('\n')
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${number(plan.length)}mm" height="${number(plan.width)}mm" viewBox="0 0 ${number(plan.length)} ${number(plan.width)}">\n  <title>${xmlEscape(design.name)} — Bentwood laser cut plan</title>\n  <desc>Millimetres. Red: outer contour. Blue: living hinge cuts. Tool centerlines; no kerf compensation. Material ${design.material}, thickness ${number(design.thickness)} mm, nominal kerf ${number(design.kerf)} mm. Test material before production.</desc>\n  <g id="hinge-cuts" fill="none" stroke="#0000ff" stroke-width="0.01">\n${slots}\n  </g>\n  <g id="outer-contour" fill="none" stroke="#ff0000" stroke-width="0.01">\n    <path d="${outlinePath}"/>\n  </g>\n</svg>\n`
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${number(plan.length)}mm" height="${number(plan.width)}mm" viewBox="0 0 ${number(plan.length)} ${number(plan.width)}">\n  <title>${xmlEscape(design.name)} — Bentwood laser cut plan</title>\n  <desc>Millimetres. Red: outer contour. Blue: living hinge cuts. Tool centerlines; no kerf compensation. Material ${design.material}, thickness ${number(design.thickness)} mm, nominal kerf ${number(design.kerf)} mm. Test material before production.</desc>\n  <g id="hinge-cuts" transform="translate(0 ${number(plan.width)}) scale(1 -1)" fill="none" stroke="#0000ff" stroke-width="0.01">\n${slots}\n  </g>\n  <g id="outer-contour" transform="translate(0 ${number(plan.width)}) scale(1 -1)" fill="none" stroke="#ff0000" stroke-width="0.01">\n    <path d="${outlinePath}"/>\n  </g>\n</svg>\n`
 }
 
 /** R2000 ASCII DXF with millimetre insertion units and distinct cut layers. */
@@ -597,13 +673,13 @@ export function exportDXF(design: Design): string {
       '10',
       number(a.x),
       '20',
-      number(plan.width - a.y),
+      number(a.y),
       '30',
       '0',
       '11',
       number(b.x),
       '21',
-      number(plan.width - b.y),
+      number(b.y),
       '31',
       '0',
     )
@@ -696,7 +772,7 @@ export function exportDXF(design: Design): string {
         '10',
         number(point.x),
         '20',
-        number(plan.width - point.y),
+        number(point.y),
         '30',
         '0',
       )
@@ -793,7 +869,8 @@ export function validateDesign(input: unknown): Design | null {
     !inRange(value.spacing, 0.5, 30) ||
     !inRange(value.bridge, 0.2, 30) ||
     !inRange(value.cutLength, 1, 200) ||
-    !inRange(value.kerf, 0.01, 2)
+    !inRange(value.kerf, 0.01, 2) ||
+    (value.outlineCornerRadius !== undefined && !inRange(value.outlineCornerRadius, 0, 1000))
   )
     return null
   if (
@@ -827,6 +904,7 @@ export function validateDesign(input: unknown): Design | null {
     outline: value.outline as Design['outline'],
     width: value.width,
     customOutline,
+    outlineCornerRadius: (value.outlineCornerRadius as number | undefined) ?? 0,
     thickness: value.thickness,
     material: value.material as Design['material'],
     spacing: value.spacing,
