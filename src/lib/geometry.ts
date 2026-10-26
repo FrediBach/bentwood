@@ -1,6 +1,7 @@
 import type { CutLine, CutPlan, Design, PathSample, Point, Segment } from './types'
 import { cutPathData, cutPathLength, getCutPoints } from './cut-path'
-import { smallWaveCuts } from './small-wave'
+import { createCutoutLattice, smallWaveCell } from './cutout-lattice'
+import { honeycombCell, honeycombClearance } from './honeycomb'
 import {
   clipPatternColumn,
   MAX_PATTERN_SEGMENTS,
@@ -302,13 +303,21 @@ export function createCutPlan(design: Design): CutPlan {
   if (pathOverlaps(design.segments))
     warnings.push('The bend path crosses itself. The assembled panel may collide.')
   const shaped = design.pattern === 'wave' || design.pattern === 'zigzag'
+  const cell =
+    design.pattern === 'honeycomb'
+      ? honeycombCell(design)
+      : design.pattern === 'small-wave'
+        ? smallWaveCell(design)
+        : undefined
   const shape = patternShape(design)
   const minimumSpacing =
-    design.pattern === 'small-wave'
-      ? design.spacing / 2
-      : shaped
-        ? (design.spacing - shape.amplitude) / Math.hypot(1, shape.slope)
-        : design.spacing
+    design.pattern === 'honeycomb'
+      ? honeycombClearance(design, cell!)
+      : design.pattern === 'small-wave'
+        ? design.spacing / 2
+        : shaped
+          ? (design.spacing - shape.amplitude) / Math.hypot(1, shape.slope)
+          : design.spacing
   if (minimumSpacing <= design.kerf || design.bridge <= design.kerf)
     warnings.push(
       'The laser kerf is as wide as a ligament or bridge. Increase spacing or bridge size before exporting.',
@@ -330,8 +339,8 @@ export function createCutPlan(design: Design): CutPlan {
         .filter((s) => s.type === 'arc')
         .reduce((sum, s) => sum + segmentLength(s) / spacing, 0) *
       ((width / shape.period) * shape.samples + 2 * (width / period + 2))
-    : design.pattern === 'small-wave'
-      ? 4 * estimatedCuts
+    : cell
+      ? cell.length * estimatedCuts
       : estimatedCuts
   if (estimatedSegments > MAX_PATTERN_SEGMENTS)
     warnings.push(
@@ -341,13 +350,8 @@ export function createCutPlan(design: Design): CutPlan {
     ...design.segments.filter((s) => s.type === 'arc').map((s) => s.radius),
   )
   let skippedNarrowSpans = false
-  if (
-    validOutline &&
-    estimatedCuts <= 50000 &&
-    estimatedSegments <= MAX_PATTERN_SEGMENTS &&
-    design.pattern === 'small-wave'
-  ) {
-    const result = smallWaveCuts(design, outline, length, width)
+  if (validOutline && estimatedCuts <= 50000 && estimatedSegments <= MAX_PATTERN_SEGMENTS && cell) {
+    const result = createCutoutLattice(design, outline, length, width, cell)
     cuts.push(...result.cuts)
     cutouts = result.cutouts
     if (result.limit)
@@ -358,7 +362,7 @@ export function createCutPlan(design: Design): CutPlan {
       )
     if (result.skipped)
       warnings.push(
-        'Some wave openings cross narrow outline sections. Those openings remain uncut to keep the sheet connected.',
+        'Some openings cross narrow outline sections. Those openings remain uncut to keep the sheet connected.',
       )
   } else if (validOutline && estimatedCuts <= 50000 && estimatedSegments <= MAX_PATTERN_SEGMENTS) {
     let start = 0
@@ -699,7 +703,9 @@ export function validateDesign(input: unknown): Design | null {
     return null
   if (
     value.version === 3 &&
-    !['classic', 'graded', 'wave', 'zigzag', 'small-wave'].includes(value.pattern as string)
+    !['classic', 'graded', 'wave', 'zigzag', 'small-wave', 'honeycomb'].includes(
+      value.pattern as string,
+    )
   )
     return null
   const segments: Segment[] = []
@@ -794,5 +800,13 @@ export function validateDesign(input: unknown): Design | null {
     )
       return null
   }
+  if (
+    result.pattern === 'honeycomb' &&
+    (curvedLength / result.spacing) *
+      (getPanelWidth(result) / (result.cutLength + result.bridge) + 2) *
+      honeycombCell(result).length >
+      MAX_PATTERN_SEGMENTS
+  )
+    return null
   return result
 }

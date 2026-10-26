@@ -27,7 +27,7 @@ const samples = (svg: string) => [
 ]
 
 describe('test swatch sheet', () => {
-  it.each(['classic', 'graded', 'wave', 'zigzag', 'small-wave'] as const)(
+  it.each(['classic', 'graded', 'wave', 'zigzag', 'small-wave', 'honeycomb'] as const)(
     'exports nine separate %s samples with uncut grip tabs and actual settings',
     (pattern) => {
       const design: Design = { ...defaultDesign, name: 'Study <one>', pattern }
@@ -82,9 +82,11 @@ describe('test swatch sheet', () => {
           expect(point.y).toBeGreaterThanOrEqual(box.y - 1e-6)
           expect(point.y).toBeLessThanOrEqual(box.y + box.height + 1e-6)
         }
-        if (pattern === 'small-wave') {
+        if (pattern === 'small-wave' || pattern === 'honeycomb') {
           expect(sample[4]).toMatch(/d="[^"]+ Z"/)
-          expect(svg).toContain('Small waves')
+          expect(svg).toContain(pattern === 'small-wave' ? 'Small waves' : 'Honeycomb')
+          if (pattern === 'honeycomb')
+            expect(paths.some((path) => new Set(path.map((point) => point.x)).size > 4)).toBe(true)
         } else {
           expect(points.some((point) => Math.abs(point.y - box.y) < 1e-6)).toBe(true)
           expect(points.some((point) => Math.abs(point.y - box.y - box.height) < 1e-6)).toBe(true)

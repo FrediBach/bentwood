@@ -961,9 +961,6 @@ svg {
   cursor: pointer;
   min-width: 0;
 }
-.pattern-option-wide {
-  grid-column: 1 / -1;
-}
 .pattern-radio {
   position: absolute;
   inset: 0;
@@ -975,18 +972,21 @@ svg {
 }
 .pattern-option > span {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 7px;
-  min-height: 49px;
+  justify-content: center;
+  gap: 5px;
+  min-height: 67px;
   padding: 8px;
   border: 1px solid var(--line);
   border-radius: 5px;
   background: #fffbf2;
   color: #5d4b3d;
   font-size: 11px;
+  white-space: nowrap;
 }
 .pattern-option svg {
-  width: 36px;
+  width: 54px;
   height: 27px;
   stroke: currentColor;
   stroke-width: 1.35;

@@ -11,15 +11,59 @@ function joinAtSeam(spans: Point[][]) {
   return spans
 }
 
-/** Trotec's "Small waves" topology: staggered slender diamond openings. The
- * apparent waves belong to the remaining wood. Long axes cross the bend path.
- * This is a parametric construction, not copied template artwork. */
-export function smallWaveCuts(design: Design, outline: Point[], length: number, width: number) {
+/** A conservative laser footprint around an aperture. Its convex hull plus a
+ * square encloses the round beam; it is used only for boundary clearance,
+ * never as a replacement for the actual, possibly concave opening. */
+function clearanceEnvelope(cell: Point[], radius: number): Point[] {
+  const points = cell
+    .flatMap((p) => [
+      { x: p.x - radius, y: p.y - radius },
+      { x: p.x + radius, y: p.y - radius },
+      { x: p.x + radius, y: p.y + radius },
+      { x: p.x - radius, y: p.y + radius },
+    ])
+    .sort((a, b) => a.x - b.x || a.y - b.y)
+  const cross = (a: Point, b: Point, c: Point) =>
+    (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
+  const half = (list: Point[]) => {
+    const hull: Point[] = []
+    for (const p of list) {
+      while (hull.length >= 2 && cross(hull[hull.length - 2], hull.at(-1)!, p) <= 0) hull.pop()
+      hull.push(p)
+    }
+    return hull.slice(0, -1)
+  }
+  return [...half(points), ...half([...points].reverse())]
+}
+
+export function smallWaveCell(design: Design): Point[] {
+  const halfLong = design.cutLength / 2
+  const halfShort = design.spacing / 4
+  return [
+    { x: 0, y: -halfLong },
+    { x: halfShort, y: 0 },
+    { x: 0, y: halfLong },
+    { x: -halfShort, y: 0 },
+  ]
+}
+
+/** Staggered apertures with their long axes across the panel width.
+ * Each cell is supplied relative to its centre, as a closed ring without a
+ * repeated final point. Original contours supply the exported laser paths;
+ * separate filled regions identify the scrap removed from the preview. */
+export function createCutoutLattice(
+  design: Design,
+  outline: Point[],
+  length: number,
+  width: number,
+  cell: Point[],
+) {
   const cuts: CutLine[] = []
   const cutouts: Point[][] = []
   const period = design.cutLength + design.bridge
   const halfLong = design.cutLength / 2
-  const halfShort = design.spacing / 4
+  const halfShort = Math.max(...cell.map((p) => Math.abs(p.x)))
+  const envelope = clearanceEnvelope(cell, design.kerf / 2 + 1e-6)
   const ellipse = design.outline === 'ellipse' || design.outline === 'circle'
   let start = 0
   let previousColumn = -Infinity
@@ -51,14 +95,9 @@ export function smallWaveCuts(design: Design, outline: Point[], length: number, 
           index++
         ) {
           const y = index * period + offset
-          const diamond = [
-            { x, y: y - halfLong },
-            { x: x + halfShort, y },
-            { x, y: y + halfLong },
-            { x: x - halfShort, y },
-          ]
+          const aperture = cell.map((p) => ({ x: x + p.x, y: y + p.y }))
           const spans = joinAtSeam(
-            clipPatternColumn([...diamond, diamond[0]], outline, ellipse, length, width),
+            clipPatternColumn([...aperture, aperture[0]], outline, ellipse, length, width),
           )
           // A clipped closed contour can be split at its arbitrary first vertex.
           // Rejoin there without adding any path along the panel perimeter.
@@ -73,21 +112,11 @@ export function smallWaveCuts(design: Design, outline: Point[], length: number, 
 
           // Include the laser width when checking connectivity. A nominal tip
           // can stop just short of the opposite edge while its kerf severs it.
-          // The diamond's Minkowski sum with a square conservatively encloses
+          // The aperture's Minkowski sum with a square conservatively encloses
           // the round beam footprint, without adding cuts to the exported file.
-          const r = design.kerf / 2 + 1e-6
-          const envelope = [
-            { x: x - r, y: y - halfLong - r },
-            { x: x + r, y: y - halfLong - r },
-            { x: x + halfShort + r, y: y - r },
-            { x: x + halfShort + r, y: y + r },
-            { x: x + r, y: y + halfLong + r },
-            { x: x - r, y: y + halfLong + r },
-            { x: x - halfShort - r, y: y + r },
-            { x: x - halfShort - r, y: y - r },
-          ]
+          const expanded = envelope.map((p) => ({ x: x + p.x, y: y + p.y }))
           const clearanceSpans = joinAtSeam(
-            clipPatternColumn([...envelope, envelope[0]], outline, ellipse, length, width),
+            clipPatternColumn([...expanded, expanded[0]], outline, ellipse, length, width),
           )
           if (clearanceSpans.length !== 1) {
             skipped = true
@@ -113,7 +142,7 @@ export function smallWaveCuts(design: Design, outline: Point[], length: number, 
             break generation
           }
           cuts.push(...paths)
-          cutouts.push(diamond)
+          cutouts.push(aperture)
         }
       }
     }

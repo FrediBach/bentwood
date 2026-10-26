@@ -3,7 +3,7 @@ export type Segment =
   | { id: string; type: 'straight'; length: number }
   | { id: string; type: 'arc'; radius: number; angle: number }
 export type OutlineKind = 'rectangle' | 'square' | 'ellipse' | 'circle' | 'triangle' | 'custom'
-export type HingePattern = 'classic' | 'graded' | 'wave' | 'zigzag' | 'small-wave'
+export type HingePattern = 'classic' | 'graded' | 'wave' | 'zigzag' | 'small-wave' | 'honeycomb'
 export type Design = {
   version: 3
   name: string

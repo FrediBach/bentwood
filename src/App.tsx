@@ -83,9 +83,35 @@ const hingePatterns: { value: Design['pattern']; label: string; description: str
     description:
       'Staggered openings form the interlocking wave texture from the reference. Their long axis runs across the sheet width, perpendicular to the bend.',
   },
+  {
+    value: 'honeycomb',
+    label: 'Honeycomb',
+    description:
+      'Staggered curved openings with pointed ends form the honeycomb texture from the reference. Their long axis runs across the sheet width, perpendicular to the bend.',
+  },
 ]
 
 function PatternDrawing({ pattern }: { pattern: Design['pattern'] }) {
+  if (pattern === 'honeycomb')
+    return (
+      <svg viewBox="0 0 64 32" aria-hidden="true" focusable="false">
+        {Array.from({ length: 9 }, (_, row) =>
+          Array.from({ length: 3 }, (_, column) => {
+            const x = 16 + (column - 1) * 36.64 + (row % 2 ? 18.32 : 0)
+            const y = 2 + row * 3.35
+            return (
+              <path
+                key={`${row}-${column}`}
+                d="M0 0 C.11251 0 .18706 .243 .25352 .483 C.33474 .77622 .41407 1 .5 1 C.58593 1 .66526 .77622 .74648 .483 C.81294 .243 .88749 0 1 0 C.88749 0 .81294 -.243 .74648 -.483 C.66526 -.77622 .58593 -1 .5 -1 C.41407 -1 .33474 -.77622 .25352 -.483 C.18706 -.243 .11251 0 0 0 Z"
+                transform={`translate(${x - 13.74} ${y}) scale(27.48 1.57)`}
+                strokeWidth={0.6}
+                vectorEffect="non-scaling-stroke"
+              />
+            )
+          }),
+        )}
+      </svg>
+    )
   if (pattern === 'small-wave')
     return (
       <svg viewBox="0 0 64 32" aria-hidden="true" focusable="false">
@@ -302,6 +328,12 @@ export default function App() {
   const pointerHistory = useRef({ active: false, recorded: false })
   const plan = useMemo(() => createCutPlan(design), [design])
   const swatchSize = useMemo(() => getTestSwatchSheetSize(design), [design])
+  const referenceSettings =
+    design.pattern === 'small-wave'
+      ? { spacing: 2.4, bridge: 5.25, cutLength: 15.75 }
+      : design.pattern === 'honeycomb'
+        ? { spacing: 2.4, bridge: 6.56, cutLength: 19.68 }
+        : null
   const selected = design.segments.find((s) => s.id === selectedId)
   const total = pathLength(design.segments)
   const filename = (design.name.trim() || 'bentwood-design')
@@ -964,10 +996,7 @@ export default function App() {
               <fieldset className="pattern-selector" aria-describedby="pattern-description">
                 <legend className="sr-only">Hinge pattern</legend>
                 {hingePatterns.map((pattern) => (
-                  <label
-                    key={pattern.value}
-                    className={`pattern-option${pattern.value === 'small-wave' ? ' pattern-option-wide' : ''}`}
-                  >
+                  <label key={pattern.value} className="pattern-option">
                     <input
                       className="pattern-radio"
                       type="radio"
@@ -986,13 +1015,9 @@ export default function App() {
               <p className="control-hint" id="pattern-description">
                 {hingePatterns.find((pattern) => pattern.value === design.pattern)?.description}
               </p>
-              {design.pattern === 'small-wave' && (
+              {referenceSettings && (
                 <div className="reference-pattern-settings">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => patch({ spacing: 2.4, bridge: 5.25, cutLength: 15.75 })}
-                  >
+                  <Button variant="outline" size="sm" onClick={() => patch(referenceSettings)}>
                     Reference proportions
                   </Button>
                   <p className="control-hint">
@@ -1008,7 +1033,7 @@ export default function App() {
                   onChange={(v) => patch({ spacing: v })}
                   min={1}
                   max={12}
-                  step={design.pattern === 'small-wave' ? 0.1 : 0.5}
+                  step={referenceSettings ? 0.1 : 0.5}
                 />
                 <NumberField
                   label="Bridge"
@@ -1016,7 +1041,7 @@ export default function App() {
                   onChange={(v) => patch({ bridge: v })}
                   min={0.5}
                   max={10}
-                  step={design.pattern === 'small-wave' ? 0.25 : 0.5}
+                  step={design.pattern === 'honeycomb' ? 0.01 : referenceSettings ? 0.25 : 0.5}
                 />
               </div>
               <div className="field-row">
@@ -1026,7 +1051,7 @@ export default function App() {
                   onChange={(v) => patch({ cutLength: v })}
                   min={5}
                   max={80}
-                  step={design.pattern === 'small-wave' ? 0.25 : 1}
+                  step={design.pattern === 'honeycomb' ? 0.01 : referenceSettings ? 0.25 : 1}
                 />
               </div>
               <div className="swatch-download">

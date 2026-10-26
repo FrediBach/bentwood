@@ -152,6 +152,11 @@ test('mobile panels and accessible export dialog', async ({ page }) => {
   await smallWaves.check()
   await page.getByRole('button', { name: 'Reference proportions', exact: true }).click()
   await expect(page.locator('#pattern-description')).toContainText('perpendicular to the bend')
+  const honeycomb = page.getByRole('radio', { name: 'Honeycomb', exact: true })
+  await honeycomb.check()
+  await page.getByRole('button', { name: 'Reference proportions', exact: true }).click()
+  await expect(honeycomb).toBeChecked()
+  await expect(page.locator('#pattern-description')).toContainText('curved openings')
   await expect(
     page.getByRole('button', { name: 'Download test swatches SVG', exact: true }),
   ).toBeVisible()
@@ -165,7 +170,7 @@ test('mobile panels and accessible export dialog', async ({ page }) => {
       nodes: v.nodes.map((n) => n.target),
     })),
   ).toEqual([])
-  await smallWaves.scrollIntoViewIfNeeded()
+  await honeycomb.scrollIntoViewIfNeeded()
   await page.screenshot({ path: 'test-results/patterns-mobile.png' })
   await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
@@ -344,68 +349,88 @@ test('hinge patterns update previews, exports and saved projects with test swatc
   expect(errors).toEqual([])
 })
 
-test('small waves keeps closed openings in the preview, exports and saved projects', async ({
-  page,
-}) => {
-  const errors: string[] = []
-  page.on('pageerror', (error) => errors.push(error.message))
-  await page.goto('/')
-  await page.getByRole('radio', { name: 'Small waves', exact: true }).check()
-  await page.getByRole('button', { name: 'Reference proportions', exact: true }).click()
-  await expect(page.getByRole('spinbutton', { name: 'Cut spacing mm', exact: true })).toHaveValue(
-    '2.4',
-  )
-  await expect(page.getByRole('spinbutton', { name: 'Bridge mm', exact: true })).toHaveValue('5.25')
-  await expect(page.getByRole('spinbutton', { name: 'Cut length mm', exact: true })).toHaveValue(
-    '15.75',
-  )
-  await expect(page.locator('#pattern-description')).toContainText('interlocking wave texture')
-  await expect(page.locator('.plywood-preview canvas')).toBeVisible()
-  await page.screenshot({ path: 'test-results/small-waves-bent-preview.png' })
-  await page.getByLabel('Unfold').fill('0')
-  await page.getByLabel('Camera view').selectOption('front')
-  await page.screenshot({ path: 'test-results/small-waves-flat-preview.png' })
-  await page.getByRole('button', { name: 'Cut plan', exact: true }).click()
-  const closedCuts = page.locator('.cut-plan-view [data-hinge-cut][d$="Z"]')
-  expect(await closedCuts.count()).toBeGreaterThan(10)
-  const closedPath = await closedCuts.first().getAttribute('d')
-  await page.screenshot({ path: 'test-results/small-waves-cut-plan.png' })
-
-  const saved = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'Save project file', exact: true }).click()
-  const projectFile = await saved
-  const project = JSON.parse(await readFile((await projectFile.path())!, 'utf8'))
-  expect(project.pattern).toBe('small-wave')
-  expect(project.spacing).toBe(2.4)
-  expect(project.bridge).toBe(5.25)
-  expect(project.cutLength).toBe(15.75)
-  expect(project.version).toBe(3)
-  await page.reload()
-  await expect(page.getByRole('radio', { name: 'Small waves', exact: true })).toBeChecked()
-
-  await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
-  const exported = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'Download SVG', exact: true }).click()
-  const svgFile = await exported
-  const svg = await readFile((await svgFile.path())!, 'utf8')
-  expect(svg).toContain(`d="${closedPath}"`)
-  await page.getByRole('button', { name: 'Close dialog', exact: true }).click()
-  const swatches = page.waitForEvent('download')
-  await page.getByRole('button', { name: 'Download test swatches SVG', exact: true }).click()
-  const swatchFile = await swatches
-  expect(swatchFile.suggestedFilename()).toContain('-small-wave-test-swatches.svg')
-  const swatchSVG = await readFile((await swatchFile.path())!, 'utf8')
-  const sampleContours = await page.evaluate((contents) => {
-    const document = new DOMParser().parseFromString(contents, 'image/svg+xml')
-    return [...document.querySelectorAll('[id^="swatch-"]')].map(
-      (sample) => sample.querySelectorAll('path[d$="Z"]').length,
+for (const pattern of [
+  {
+    id: 'small-wave',
+    label: 'Small waves',
+    bridge: 5.25,
+    cutLength: 15.75,
+    description: 'interlocking wave texture',
+  },
+  {
+    id: 'honeycomb',
+    label: 'Honeycomb',
+    bridge: 6.56,
+    cutLength: 19.68,
+    description: 'curved openings with pointed ends',
+  },
+]) {
+  test(`${pattern.label} keeps closed openings in the preview, exports and saved projects`, async ({
+    page,
+  }) => {
+    const errors: string[] = []
+    page.on('pageerror', (error) => errors.push(error.message))
+    await page.goto('/')
+    await page.getByRole('radio', { name: pattern.label, exact: true }).check()
+    await page.getByRole('button', { name: 'Reference proportions', exact: true }).click()
+    await expect(page.getByRole('spinbutton', { name: 'Cut spacing mm', exact: true })).toHaveValue(
+      '2.4',
     )
-  }, swatchSVG)
-  expect(sampleContours).toHaveLength(9)
-  expect(sampleContours.every((count) => count > 0)).toBe(true)
-  expect(swatchSVG).toContain('Small waves')
-  expect(errors).toEqual([])
-})
+    await expect(page.getByRole('spinbutton', { name: 'Bridge mm', exact: true })).toHaveValue(
+      String(pattern.bridge),
+    )
+    await expect(page.getByRole('spinbutton', { name: 'Cut length mm', exact: true })).toHaveValue(
+      String(pattern.cutLength),
+    )
+    await expect(page.locator('#pattern-description')).toContainText(pattern.description)
+    await expect(page.locator('.plywood-preview canvas')).toBeVisible()
+    await page.screenshot({ path: `test-results/${pattern.id}-bent-preview.png` })
+    await page.getByLabel('Unfold').fill('0')
+    await page.getByLabel('Camera view').selectOption('front')
+    await page.screenshot({ path: `test-results/${pattern.id}-flat-preview.png` })
+    await page.getByRole('button', { name: 'Cut plan', exact: true }).click()
+    const closedCuts = page.locator('.cut-plan-view [data-hinge-cut][d$="Z"]')
+    expect(await closedCuts.count()).toBeGreaterThan(10)
+    const closedPath = await closedCuts.first().getAttribute('d')
+    if (pattern.id === 'honeycomb') expect(closedPath!.match(/L/g)!.length).toBeGreaterThan(8)
+    await page.screenshot({ path: `test-results/${pattern.id}-cut-plan.png` })
+
+    const saved = page.waitForEvent('download')
+    await page.getByRole('button', { name: 'Save project file', exact: true }).click()
+    const projectFile = await saved
+    const project = JSON.parse(await readFile((await projectFile.path())!, 'utf8'))
+    expect(project.pattern).toBe(pattern.id)
+    expect(project.spacing).toBe(2.4)
+    expect(project.bridge).toBe(pattern.bridge)
+    expect(project.cutLength).toBe(pattern.cutLength)
+    expect(project.version).toBe(3)
+    await page.reload()
+    await expect(page.getByRole('radio', { name: pattern.label, exact: true })).toBeChecked()
+
+    await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
+    const exported = page.waitForEvent('download')
+    await page.getByRole('button', { name: 'Download SVG', exact: true }).click()
+    const svgFile = await exported
+    const svg = await readFile((await svgFile.path())!, 'utf8')
+    expect(svg).toContain(`d="${closedPath}"`)
+    await page.getByRole('button', { name: 'Close dialog', exact: true }).click()
+    const swatches = page.waitForEvent('download')
+    await page.getByRole('button', { name: 'Download test swatches SVG', exact: true }).click()
+    const swatchFile = await swatches
+    expect(swatchFile.suggestedFilename()).toContain(`-${pattern.id}-test-swatches.svg`)
+    const swatchSVG = await readFile((await swatchFile.path())!, 'utf8')
+    const sampleContours = await page.evaluate((contents) => {
+      const document = new DOMParser().parseFromString(contents, 'image/svg+xml')
+      return [...document.querySelectorAll('[id^="swatch-"]')].map(
+        (sample) => sample.querySelectorAll('path[d$="Z"]').length,
+      )
+    }, swatchSVG)
+    expect(sampleContours).toHaveLength(9)
+    expect(sampleContours.every((count) => count > 0)).toBe(true)
+    expect(swatchSVG).toContain(pattern.label)
+    expect(errors).toEqual([])
+  })
+}
 
 test('3D preview supports open cuts on round and concave outlines', async ({ page }) => {
   const errors: string[] = []
