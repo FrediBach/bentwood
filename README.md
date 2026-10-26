@@ -1,12 +1,12 @@
 # Bentwood
 
-A browser-based design studio for laser-cut bent plywood, built with Vite, React, TypeScript, three.js, and shadcn/ui components. The intended domain is **bentwood.app**. This repository is a local application; no hosting or domain connection has been configured.
+A browser-based design studio for laser-cut bent plywood, built with Vite, React, TypeScript, three.js, and shadcn/ui components. The intended domain is **bentwood.app**. The repository is configured for a static Vercel deployment; hosting and the domain have not been connected yet.
 
 The living-hinge approach is inspired by [Endurance’s flexible plywood guide](https://endurancelasers.com/making-flexible-plywood-using-a-laser/).
 
 ## Run locally
 
-Use Node.js 22.12 or later on an LTS release, with npm.
+Use Node.js 24 LTS with npm. The Node major version is pinned in `package.json` and `.nvmrc`.
 
 ```sh
 npm install
@@ -21,9 +21,10 @@ npm test           # Geometry and export tests
 npm run test:e2e   # Browser workflows and accessibility checks
 npm run build      # Typecheck and production build in dist/
 npm run preview    # Serve the production build locally
+npm run generate:og # Regenerate the 1200 × 630 social sharing image
 ```
 
-The browser tests use Playwright. If its Chromium browser is missing, install it with `npx playwright install chromium`, then rerun the tests.
+The browser tests and OG image generator use Playwright. If its Chromium browser is missing, install it with `npx playwright install chromium`, then rerun the command. The OG generator renders the actual plywood preview with the app’s branding, writes `public/og-image.png`, and closes its temporary browser and server. The generated PNG is checked in; Vercel builds do not need a browser.
 
 ## Design a panel
 
@@ -89,9 +90,15 @@ The cut plan, flat editor, and 3D preview share the same design schema and geome
 
 ## Deploy to bentwood.app
 
-Build with `npm run build`, then serve the contents of `dist/` on any static host. No server runtime, environment variables, API keys, or database are required. The app uses a single entry page; configure an `index.html` fallback if the hosting platform requires one for SPAs.
+Import this repository into Vercel and deploy from the repository root. The checked-in `vercel.json` selects Vite, installs the lockfile with `npm ci`, runs `npm run build`, and publishes `dist/`. Use Node.js 24.x in the Vercel project settings. No server runtime, environment variables, API keys, or database are required.
 
-Add `bentwood.app` to the selected hosting service, apply that provider’s DNS records at the domain registrar, and enable HTTPS. The HTML already includes the intended canonical URL, branding, and metadata. Creating the repository does not register the domain or alter DNS.
+The configuration adds content-type protection, a referrer policy, and frame protection. Vite's hashed files in `/assets/` receive immutable caching; the entry HTML is revalidated so new deployments do not leave browsers on an older application shell. There is no catch-all rewrite: the app currently lives at `/`, and missing assets should return 404 rather than HTML. If URL-based routes are added later, configure their rewrites explicitly.
+
+Open Graph and Twitter metadata are present in `index.html`, with the 1200 × 630 PNG at `/og-image.png`. `robots.txt` and `sitemap.xml` reference the production origin, `https://bentwood.app`. These files are served directly from `public/` and copied into every build.
+
+After deployment, add `bentwood.app` in Vercel's domain settings and apply the DNS records Vercel supplies at the registrar. Verify the domain uses HTTPS and that `/og-image.png`, `/robots.txt`, and `/sitemap.xml` load at the production URL. Repository configuration does not publish the app, register the domain, or alter DNS.
+
+For another static host, run `npm run build` and serve `dist/` with equivalent caching and response headers. See the [Vercel Vite guide](https://vercel.com/docs/frameworks/frontend/vite) and [configuration reference](https://vercel.com/docs/project-configuration/vercel-json) for hosting details.
 
 ## License
 

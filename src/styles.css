@@ -1037,12 +1037,23 @@ svg {
   margin: 0 6px;
   color: #aea299;
 }
-.footer-mark {
-  font-size: 17px;
-  font-weight: 600;
-  letter-spacing: -1px;
-  color: #837063;
-  margin-left: 14px;
+.geometry-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.copyright-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  color: var(--walnut);
+  font-size: 11px;
+  white-space: nowrap;
+  text-decoration: none;
+  text-underline-offset: 3px;
+}
+.copyright-link:hover {
+  text-decoration: underline;
 }
 .tooltip {
   font-size: 11px;
@@ -1706,12 +1717,6 @@ svg {
     padding: 0 15px;
     font-size: 8px;
   }
-  .status-bar > span:last-child {
-    font-size: 0;
-  }
-  .footer-mark {
-    font-size: 16px;
-  }
   .bend-control {
     bottom: 48px;
   }
@@ -2105,9 +2110,6 @@ svg {
     left: 22px;
     right: auto;
   }
-  .status-bar > span:last-child {
-    font-size: 0;
-  }
   .preset-options > button > span {
     font-size: 10px !important;
   }
@@ -2163,10 +2165,15 @@ svg {
 .material-note.has-warning {
   color: #705d30;
 }
-.status-bar,
-.footer-mark {
+.status-bar {
   color: #645347;
 }
 .quiet-note {
   color: #6d594a;
+}
+
+@media (max-width: 650px) {
+  .geometry-note {
+    display: none;
+  }
 }

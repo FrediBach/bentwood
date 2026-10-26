@@ -943,11 +943,19 @@ export default function App() {
         <footer className="status-bar">
           <span>
             <span className="status-dot" />
-            All dimensions in mm<span className="status-separator">/</span>Neutral-axis geometry
+            All dimensions in mm
+            <span className="geometry-note">
+              <span className="status-separator">/</span>Neutral-axis geometry
+            </span>
           </span>
-          <span>
-            Made for curious makers.<span className="footer-mark">b.</span>
-          </span>
+          <a
+            className="copyright-link"
+            href="https://fredibach.com"
+            target="_blank"
+            rel="noreferrer"
+          >
+            © 2026 fredi Bach
+          </a>
         </footer>
         <input
           className="sr-only"

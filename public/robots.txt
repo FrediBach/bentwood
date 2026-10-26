@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://bentwood.app/sitemap.xml
