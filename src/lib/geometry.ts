@@ -3,6 +3,7 @@ import { cutPathData, cutPathLength, getCutPoints } from './cut-path'
 import { createCutoutLattice } from './cutout-lattice'
 import { honeycombCell, honeycombClearance } from './honeycomb'
 import { createMeanderLattice, meanderCell, meanderClearance, meanderRepeat } from './meander'
+import { isWoodMaterial } from './wood-materials'
 import {
   clipPatternColumn,
   MAX_PATTERN_SEGMENTS,
@@ -860,7 +861,7 @@ export function validateDesign(input: unknown): Design | null {
     !['rectangle', 'square', 'ellipse', 'circle', 'triangle', 'custom'].includes(
       value.outline as string,
     ) ||
-    !['birch', 'walnut', 'basswood'].includes(value.material as string)
+    !isWoodMaterial(value.material)
   )
     return null
   if (

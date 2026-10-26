@@ -879,12 +879,9 @@ svg {
   padding: 12px 15px;
   color: #715735;
 }
-.wood-swatch.walnut {
-  background-color: #97744f;
-  color: #2d251b;
-}
-.wood-swatch.basswood {
-  background-color: #ecddb7;
+.wood-swatch.walnut,
+.wood-swatch.mahogany {
+  color: #fff6e6;
 }
 .wood-swatch > span {
   font-family: Georgia, serif;

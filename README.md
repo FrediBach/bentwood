@@ -74,6 +74,8 @@ The previews, SVG, and DXF share the same generated paths for every intermediate
 
 The desktop workspace stays within the viewport, with individual controls scrolling when needed. Smaller screens switch between the design, studio, and material panels.
 
+**Material appearance** offers birch, walnut, basswood, oak, maple, cherry, ash, beech, and mahogany plywood. Each has its own procedural grain, color, and surface roughness. The grain tiles seamlessly in both directions and stays aligned with the sheet as it bends or unfolds; exposed edges show the selected veneer around a layered plywood core.
+
 ### Controls and saving
 
 - Drag the 3D preview to orbit, scroll to zoom, and use the camera menu for perspective, top, or front views. Focus the preview and use arrow keys to orbit, `+` / `−` to zoom, and `Home` to reset.

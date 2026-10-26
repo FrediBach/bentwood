@@ -7,6 +7,7 @@ import {
   Settings2,
 } from 'lucide-react'
 import type { CutPlan, Design } from '../../lib/types'
+import { woodMaterials } from '../../lib/wood-materials'
 import { CutPlanView } from '../DesignEditors'
 import { Button } from '../ui/button'
 import { NumberField, PatternDrawing, PercentageField } from './StudioControls'
@@ -71,6 +72,8 @@ export function SettingsSidebar({
   setMobilePanel: React.Dispatch<React.SetStateAction<'design' | 'studio' | 'settings'>>
   plan: CutPlan
 }) {
+  const materialIndex = woodMaterials.findIndex((material) => material.id === design.material)
+  const material = woodMaterials[materialIndex]
   return (
     <aside className="settings-sidebar" aria-label="Material and laser settings">
       <div className="rail-heading">
@@ -78,10 +81,11 @@ export function SettingsSidebar({
         <h2>The details</h2>
       </div>
       <section className="material-section">
-        <div className={`wood-swatch ${design.material}`}>
-          <span>
-            {design.material === 'birch' ? '01' : design.material === 'walnut' ? '02' : '03'}
-          </span>
+        <div
+          className={`wood-swatch ${design.material}`}
+          style={{ backgroundColor: material.color }}
+        >
+          <span>{String(materialIndex + 1).padStart(2, '0')}</span>
           <Layers3 size={23} />
         </div>
         <label className="select-field">
@@ -91,9 +95,11 @@ export function SettingsSidebar({
               value={design.material}
               onChange={(e) => patch({ material: e.target.value as Design['material'] })}
             >
-              <option value="birch">Birch plywood</option>
-              <option value="walnut">Walnut plywood</option>
-              <option value="basswood">Basswood plywood</option>
+              {woodMaterials.map((material) => (
+                <option key={material.id} value={material.id}>
+                  {material.label}
+                </option>
+              ))}
             </select>
             <ChevronDown size={14} />
           </div>

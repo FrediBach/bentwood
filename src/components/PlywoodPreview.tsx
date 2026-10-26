@@ -5,6 +5,7 @@ import { samplePath, segmentLength } from '@/lib/geometry'
 import { getCutPoints } from '@/lib/cut-path'
 import { createPanelSurface, type PanelSurface } from '@/lib/panel-surface'
 import type { CutPlan, Design, Point, Segment } from '@/lib/types'
+import { createWoodTexturePixels, woodAppearance, woodTextureSize } from '@/lib/wood-texture'
 
 type Props = {
   design: Design
@@ -50,60 +51,16 @@ function canRenderCutoutVoids(plan: CutPlan) {
 }
 
 function woodTexture(material: Design['material']) {
-  const cached = grainCanvases.get(material)
-  if (cached) {
-    const texture = new THREE.CanvasTexture(cached)
-    texture.colorSpace = THREE.SRGBColorSpace
-    texture.wrapS = texture.wrapT = THREE.RepeatWrapping
-    texture.anisotropy = 8
-    return texture
+  let canvas = grainCanvases.get(material)
+  if (!canvas) {
+    canvas = document.createElement('canvas')
+    canvas.width = canvas.height = 1024
+    const context = canvas.getContext('2d')!
+    const pixels = context.createImageData(canvas.width, canvas.height)
+    pixels.data.set(createWoodTexturePixels(material, canvas.width))
+    context.putImageData(pixels, 0, 0)
+    grainCanvases.set(material, canvas)
   }
-  const canvas = document.createElement('canvas')
-  canvas.width = 1024
-  canvas.height = 1024
-  const ctx = canvas.getContext('2d')!
-  const bases = { birch: '#ddc196', walnut: '#916745', basswood: '#e5d2ad' }
-  ctx.fillStyle = bases[material]
-  ctx.fillRect(0, 0, 1024, 1024)
-  let seed = 827
-  const random = () => {
-    seed = (seed * 16807) % 2147483647
-    return (seed - 1) / 2147483646
-  }
-  for (let row = 0; row < 1600; row++) {
-    const y = random() * 1024
-    const amplitude = 0.7 + random() * 6
-    const frequency = 0.002 + random() * 0.009
-    const phase = random() * Math.PI * 2
-    const opacity = 0.015 + random() * 0.095
-    ctx.strokeStyle =
-      row % 4 ? `rgba(87, 54, 24, ${opacity})` : `rgba(255, 245, 218, ${opacity * 2})`
-    ctx.lineWidth = 0.3 + random() * 1.1
-    ctx.beginPath()
-    for (let x = 0; x <= 1024; x += 8) {
-      const py =
-        y +
-        Math.sin(x * frequency + phase) * amplitude +
-        Math.sin(x * 0.003 + phase) * amplitude * 2
-      if (x === 0) ctx.moveTo(x, py)
-      else ctx.lineTo(x, py)
-    }
-    ctx.stroke()
-  }
-  // Broad, faint grain ribbons keep the material readable from a distance.
-  for (let row = 0; row < 32; row++) {
-    const y = random() * 1024
-    ctx.strokeStyle = `rgba(116, 75, 32, ${0.025 + random() * 0.025})`
-    ctx.lineWidth = 2 + random() * 3
-    ctx.beginPath()
-    for (let x = 0; x <= 1024; x += 8) {
-      const py = y + Math.sin(x * 0.003 + row * 0.5) * 15
-      if (x === 0) ctx.moveTo(x, py)
-      else ctx.lineTo(x, py)
-    }
-    ctx.stroke()
-  }
-  grainCanvases.set(material, canvas)
   const texture = new THREE.CanvasTexture(canvas)
   texture.colorSpace = THREE.SRGBColorSpace
   texture.wrapS = texture.wrapT = THREE.RepeatWrapping
@@ -116,12 +73,10 @@ function edgeTexture(material: Design['material']) {
   canvas.width = 64
   canvas.height = 128
   const ctx = canvas.getContext('2d')!
-  ctx.fillStyle = material === 'walnut' ? '#67462c' : '#ac8756'
+  ctx.fillStyle = '#9b794f'
   ctx.fillRect(0, 0, 64, 128)
-  const shades =
-    material === 'walnut'
-      ? ['#a37c50', '#65452b', '#bd925d', '#725031', '#9c7548']
-      : ['#e7cf9f', '#b18a53', '#e6c692', '#ac8450', '#e7cf9f']
+  const veneer = woodAppearance(material).color
+  const shades = [veneer, '#b18a53', '#e6c692', '#ac8450', veneer]
   shades.forEach((color, index) => {
     ctx.fillStyle = color
     ctx.fillRect(0, (index * 128) / shades.length, 64, 128 / shades.length - 1)
@@ -229,7 +184,7 @@ function createPanel(design: Design, plan: CutPlan, bend: number, showCuts: bool
     }
     for (const point of side > 0 ? [a, b, c] : [c, b, a]) {
       facePositions.push(...mapped(point, side))
-      faceUVs.push(point.x / 360, point.y / 360)
+      faceUVs.push(point.x / woodTextureSize.length, point.y / woodTextureSize.width)
     }
   }
   for (const polygon of surface.polygons) {
@@ -286,7 +241,7 @@ function createPanel(design: Design, plan: CutPlan, bend: number, showCuts: bool
     faceUVs,
     new THREE.MeshStandardMaterial({
       map: woodTexture(design.material),
-      roughness: 0.71,
+      roughness: woodAppearance(design.material).roughness,
       metalness: 0,
       side: THREE.DoubleSide,
     }),
@@ -305,7 +260,7 @@ function createPanel(design: Design, plan: CutPlan, bend: number, showCuts: bool
       cutPositions,
       cutUVs,
       new THREE.MeshStandardMaterial({
-        color: design.material === 'walnut' ? '#362317' : '#5a3c22',
+        color: ['walnut', 'mahogany'].includes(design.material) ? '#362317' : '#5a3c22',
         roughness: 0.94,
         side: THREE.DoubleSide,
       }),

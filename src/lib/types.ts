@@ -1,3 +1,5 @@
+import type { WoodMaterial } from './wood-materials'
+
 export type Point = { x: number; y: number }
 export type Segment =
   | { id: string; type: 'straight'; length: number }
@@ -13,7 +15,7 @@ export type Design = {
   customOutline: Point[]
   outlineCornerRadius: number
   thickness: number
-  material: 'birch' | 'walnut' | 'basswood'
+  material: WoodMaterial
   spacing: number
   bridge: number
   cutLength: number

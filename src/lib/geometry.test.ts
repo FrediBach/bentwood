@@ -15,6 +15,7 @@ import {
 import type { Design, Point, Segment } from './types'
 import { cutPathData, cutPathLength, getCutPoints } from './cut-path'
 import { createPanelSurface } from './panel-surface'
+import { woodMaterials } from './wood-materials'
 
 const design = (overrides: Partial<Design> = {}): Design => ({
   ...structuredClone(defaultDesign),
@@ -357,6 +358,10 @@ describe('manufacturing export', () => {
 })
 
 describe('project import validation', () => {
+  it.each(woodMaterials)('round-trips a saved $label project', ({ id }) => {
+    const input = design({ material: id })
+    expect(validateDesign(JSON.parse(JSON.stringify(input)))).toEqual(input)
+  })
   it('round-trips the persisted schema without retaining unknown properties', () => {
     expect(validateDesign(JSON.parse(JSON.stringify(defaultDesign)))).toEqual(defaultDesign)
     const input = { ...defaultDesign, unknown: 'discarded' }
