@@ -144,6 +144,25 @@ test('mobile panels and accessible export dialog', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Bend your idea.' })).toBeVisible()
   await page.getByRole('button', { name: 'Material & cuts', exact: true }).click()
   await expect(page.getByRole('spinbutton', { name: 'Thickness' })).toBeVisible()
+  const wave = page.getByRole('radio', { name: 'Wave', exact: true })
+  await wave.check()
+  await expect(wave).toBeChecked()
+  await expect(page.locator('#pattern-description')).toContainText('Undulating cuts')
+  await expect(
+    page.getByRole('button', { name: 'Download test swatches SVG', exact: true }),
+  ).toBeVisible()
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390)
+  const settingsAccessibility = await new AxeBuilder({ page })
+    .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
+    .analyze()
+  expect(
+    settingsAccessibility.violations.map((v) => ({
+      id: v.id,
+      nodes: v.nodes.map((n) => n.target),
+    })),
+  ).toEqual([])
+  await wave.scrollIntoViewIfNeeded()
+  await page.screenshot({ path: 'test-results/patterns-mobile.png' })
   await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
   const results = await new AxeBuilder({ page })
@@ -195,12 +214,14 @@ test('existing projects migrate to cuts that meet the panel edges', async ({ pag
   await expect(page.getByRole('spinbutton', { name: 'Edge margin' })).toHaveCount(0)
   await expect(page.locator('.plywood-preview canvas')).toBeVisible()
   await page.getByRole('button', { name: 'Cut plan', exact: true }).click()
-  const cuts = await page.locator('.cut-plan-view svg line').evaluateAll((lines) =>
-    lines.map((line) => ({
-      x: Number(line.getAttribute('x1')),
-      y1: Number(line.getAttribute('y1')),
-      y2: Number(line.getAttribute('y2')),
-    })),
+  await expect(page.getByRole('radio', { name: 'Classic', exact: true })).toBeChecked()
+  const cuts = await page.locator('.cut-plan-view [data-hinge-cut]').evaluateAll((paths) =>
+    paths.map((element) => {
+      const path = element as SVGPathElement
+      const start = path.getPointAtLength(0)
+      const end = path.getPointAtLength(path.getTotalLength())
+      return { x: start.x, y1: start.y, y2: end.y }
+    }),
   )
   const columns = [...new Set(cuts.map((cut) => cut.x))]
   expect(columns.length).toBeGreaterThan(30)
@@ -217,11 +238,105 @@ test('existing projects migrate to cuts that meet the panel edges', async ({ pag
   await page.getByRole('button', { name: 'Save project file', exact: true }).click()
   const file = await saved
   const migrated = JSON.parse(await readFile((await file.path())!, 'utf8'))
-  expect(migrated.version).toBe(2)
+  expect(migrated.version).toBe(3)
+  expect(migrated.pattern).toBe('classic')
   expect(migrated).not.toHaveProperty('edgeMargin')
   expect(migrated.name).toBe(legacyProject.name)
   await page.reload()
   await expect(page.getByLabel('Project name')).toHaveValue(legacyProject.name)
+  expect(errors).toEqual([])
+})
+
+test('hinge patterns update previews, exports and saved projects with test swatches', async ({
+  page,
+}) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.goto('/')
+  const pattern = (name: string) => page.getByRole('radio', { name, exact: true })
+  await expect(pattern('Classic')).toBeChecked()
+  await pattern('Classic').focus()
+  await page.keyboard.press('ArrowRight')
+  await expect(pattern('Graded')).toBeChecked()
+  await expect(page.locator('#pattern-description')).toContainText('single radius')
+  await pattern('Wave').check()
+  await expect(page.locator('.plywood-preview canvas')).toBeVisible()
+  await expect(page.getByText('Dense pattern: cuts shown as lines')).toHaveCount(0)
+  await page.screenshot({ path: 'test-results/wave-bent-preview.png' })
+  await page.getByRole('button', { name: 'Cut plan', exact: true }).click()
+  const previewCut = page.locator('.cut-plan-view [data-hinge-cut]').first()
+  const wavePath = await previewCut.getAttribute('d')
+  expect(wavePath).toBeTruthy()
+  const varyingX = await previewCut.evaluate((element) => {
+    const path = element as SVGPathElement
+    const length = path.getTotalLength()
+    const points = [0, 0.25, 0.5, 0.75, 1].map(
+      (fraction) => path.getPointAtLength(length * fraction).x,
+    )
+    return Math.max(...points) - Math.min(...points)
+  })
+  expect(varyingX).toBeGreaterThan(0.1)
+  await page.screenshot({ path: 'test-results/wave-cut-plan.png' })
+  await pattern('Zigzag').check()
+  await expect(previewCut).not.toHaveAttribute('d', wavePath!)
+  await page.getByRole('button', { name: '3D preview', exact: true }).click()
+  await expect(page.locator('.plywood-preview canvas')).toBeVisible()
+  await expect(page.getByText('Dense pattern: cuts shown as lines')).toHaveCount(0)
+  await page.screenshot({ path: 'test-results/zigzag-bent-preview.png' })
+  await pattern('Wave').check()
+  await page.getByRole('button', { name: 'Cut plan', exact: true }).click()
+  await expect(previewCut).toHaveAttribute('d', wavePath!)
+
+  const saved = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save project file', exact: true }).click()
+  const file = await saved
+  const project = JSON.parse(await readFile((await file.path())!, 'utf8'))
+  expect(project.pattern).toBe('wave')
+  expect(project.version).toBe(3)
+  await page.reload()
+  await expect(pattern('Wave')).toBeChecked()
+  await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
+  const exported = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download SVG', exact: true }).click()
+  const svgFile = await exported
+  const svg = await readFile((await svgFile.path())!, 'utf8')
+  const exportedPath = await page.evaluate(
+    (contents) =>
+      new DOMParser()
+        .parseFromString(contents, 'image/svg+xml')
+        .querySelector('#hinge-cuts path')
+        ?.getAttribute('d'),
+    svg,
+  )
+  expect(exportedPath).toBe(wavePath)
+  await page.getByRole('button', { name: 'Close dialog', exact: true }).click()
+
+  const swatches = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download test swatches SVG', exact: true }).click()
+  const swatchFile = await swatches
+  expect(swatchFile.suggestedFilename()).toContain('-wave-test-swatches.svg')
+  const swatchSVG = await readFile((await swatchFile.path())!, 'utf8')
+  const swatchDetails = await page.evaluate((contents) => {
+    const document = new DOMParser().parseFromString(contents, 'image/svg+xml')
+    return {
+      samples: document.querySelectorAll('[id^="swatch-"]').length,
+      labels: Boolean(document.querySelector('#engraving-labels')),
+      physicalSize: document.documentElement.getAttribute('width'),
+    }
+  }, swatchSVG)
+  expect(swatchDetails.samples).toBe(9)
+  expect(swatchDetails.labels).toBe(true)
+  expect(swatchDetails.physicalSize).toMatch(/mm$/)
+
+  const legacy = { ...project, version: 2, name: 'Version two study' }
+  delete legacy.pattern
+  await page.getByLabel('Import project file').setInputFiles({
+    name: 'legacy-v2.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(legacy)),
+  })
+  await expect(page.getByLabel('Project name')).toHaveValue('Version two study')
+  await expect(pattern('Classic')).toBeChecked()
   expect(errors).toEqual([])
 })
 

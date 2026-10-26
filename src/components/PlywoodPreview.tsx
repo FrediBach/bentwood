@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { samplePath, segmentLength } from '@/lib/geometry'
+import { getCutPoints } from '@/lib/cut-path'
 import { createPanelSurface, type PanelSurface } from '@/lib/panel-surface'
 import type { CutPlan, Design, Point, Segment } from '@/lib/types'
 
@@ -32,6 +33,16 @@ type PreviewContext = {
 
 const grainCanvases = new Map<Design['material'], HTMLCanvasElement>()
 const panelSurfaces = new WeakMap<CutPlan, { kerf: number; surface: PanelSurface }>()
+
+function canRenderDetailedCuts(plan: CutPlan) {
+  if (plan.cuts.length > 2500) return false
+  let segments = 0
+  for (const cut of plan.cuts) {
+    segments += Math.max(0, getCutPoints(cut).length - 1)
+    if (segments > 20000) return false
+  }
+  return true
+}
 
 function woodTexture(material: Design['material']) {
   const cached = grainCanvases.get(material)
@@ -157,7 +168,7 @@ function createPanel(design: Design, plan: CutPlan, bend: number, showCuts: bool
   if (plan.outline.length < 3) return group
   const segments = previewSegments(design.segments, bend)
   // Subtract kerfs first: edge cuts must form open notches in the perimeter.
-  const detailedCuts = showCuts && plan.cuts.length <= 2500
+  const detailedCuts = showCuts && canRenderDetailedCuts(plan)
   let surface: PanelSurface
   const cached = panelSurfaces.get(plan)
   if (detailedCuts && cached?.kerf === design.kerf) surface = cached.surface
@@ -293,11 +304,11 @@ function createPanel(design: Design, plan: CutPlan, bend: number, showCuts: bool
   if (showCuts && !detailedCuts) {
     const linePositions: number[] = []
     for (const cut of plan.cuts) {
+      const points = getCutPoints(cut)
       for (const side of [-1.01, 1.01]) {
-        linePositions.push(
-          ...mapped({ x: cut.x, y: cut.y1 }, side),
-          ...mapped({ x: cut.x, y: cut.y2 }, side),
-        )
+        for (let index = 1; index < points.length; index++) {
+          linePositions.push(...mapped(points[index - 1], side), ...mapped(points[index], side))
+        }
       }
     }
     const geometry = new THREE.BufferGeometry()
@@ -558,7 +569,7 @@ export default function PlywoodPreview({
       className="plywood-preview"
       style={{ width: '100%', height: '100%', position: 'relative' }}
     >
-      {showCuts && plan.cuts.length > 2500 && !error && (
+      {showCuts && !canRenderDetailedCuts(plan) && !error && (
         <div
           style={{
             position: 'absolute',

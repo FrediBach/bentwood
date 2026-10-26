@@ -48,10 +48,72 @@ import {
   validateDesign,
 } from './lib/geometry'
 import type { Design, OutlineKind, Segment } from './lib/types'
+import { exportTestSwatchesSVG, getTestSwatchSheetSize } from './lib/test-swatches'
 
 type View = 'preview' | 'outline' | 'plan'
 // Keep the original storage key so validation can migrate existing projects in place.
 const storageKey = 'bentwood.design.v1'
+const hingePatterns: { value: Design['pattern']; label: string; description: string }[] = [
+  {
+    value: 'classic',
+    label: 'Classic',
+    description: 'Straight staggered cuts, evenly spaced along each curve.',
+  },
+  {
+    value: 'graded',
+    label: 'Graded',
+    description:
+      'Gentler curves use up to 2× wider spacing. A single radius looks like Classic; your cut spacing applies to the tightest curve.',
+  },
+  {
+    value: 'wave',
+    label: 'Wave',
+    description:
+      'Undulating cuts for a flowing texture. Test a swatch to find the right flexibility.',
+  },
+  {
+    value: 'zigzag',
+    label: 'Zigzag',
+    description:
+      'Angular cuts for a geometric texture. Test a swatch to find the right flexibility.',
+  },
+]
+
+function PatternDrawing({ pattern }: { pattern: Design['pattern'] }) {
+  const columns = pattern === 'graded' ? [8, 16, 26, 39, 55] : [8, 20, 32, 44, 56]
+  return (
+    <svg viewBox="0 0 64 32" aria-hidden="true" focusable="false">
+      {columns.flatMap((x, column) => {
+        const ranges =
+          column % 2
+            ? [
+                [0, 6],
+                [10, 22],
+                [26, 32],
+              ]
+            : [
+                [0, 14],
+                [18, 32],
+              ]
+        return ranges.map(([start, end], index) => {
+          const points = Array.from({ length: end - start + 1 }, (_, step) => {
+            const y = start + step
+            const phase = y / 12
+            const offset =
+              pattern === 'wave'
+                ? Math.sin(phase * Math.PI * 2) * 2.5
+                : pattern === 'zigzag'
+                  ? (1 - 4 * Math.abs((phase % 1) - 0.5)) * 2.5
+                  : 0
+            return `${x + offset},${y}`
+          })
+          return <polyline key={`${column}-${index}`} points={points.join(' ')} />
+        })
+      })}
+    </svg>
+  )
+}
+
 function loadDesign() {
   try {
     const stored = localStorage.getItem(storageKey)
@@ -215,6 +277,7 @@ export default function App() {
   const fileInput = useRef<HTMLInputElement>(null)
   const pointerHistory = useRef({ active: false, recorded: false })
   const plan = useMemo(() => createCutPlan(design), [design])
+  const swatchSize = useMemo(() => getTestSwatchSheetSize(design), [design])
   const selected = design.segments.find((s) => s.id === selectedId)
   const total = pathLength(design.segments)
   const filename = (design.name.trim() || 'bentwood-design')
@@ -325,6 +388,20 @@ export default function App() {
       setNotice(`${format.toUpperCase()} cut plan downloaded at 1:1 scale.`)
     } catch (error) {
       setNotice(error instanceof Error ? error.message : 'The cut plan could not be exported.')
+    }
+  }
+  function exportTestSwatches() {
+    try {
+      download(
+        exportTestSwatchesSVG(design),
+        `${filename}-${design.pattern}-test-swatches.svg`,
+        'image/svg+xml',
+      )
+      setNotice(
+        'Test swatches downloaded at 1:1 scale. Set the labels layer to engrave in your laser software.',
+      )
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'The test swatches could not be exported.')
     }
   }
   const shapeOptions: { kind: OutlineKind; label: string; icon: ReactNode }[] = [
@@ -858,9 +935,30 @@ export default function App() {
             <section className="hinge-section">
               <div className="section-label">
                 <span>LIVING HINGE</span>
-                <span className="mini-badge">Staggered</span>
+                <span className="mini-badge">4 patterns</span>
               </div>
-              <p className="control-hint">Cuts reach the panel edges in curved sections.</p>
+              <fieldset className="pattern-selector" aria-describedby="pattern-description">
+                <legend className="sr-only">Hinge pattern</legend>
+                {hingePatterns.map((pattern) => (
+                  <label key={pattern.value} className="pattern-option">
+                    <input
+                      className="pattern-radio"
+                      type="radio"
+                      name="hinge-pattern"
+                      value={pattern.value}
+                      checked={design.pattern === pattern.value}
+                      onChange={() => patch({ pattern: pattern.value })}
+                    />
+                    <span>
+                      <PatternDrawing pattern={pattern.value} />
+                      <span>{pattern.label}</span>
+                    </span>
+                  </label>
+                ))}
+              </fieldset>
+              <p className="control-hint" id="pattern-description">
+                {hingePatterns.find((pattern) => pattern.value === design.pattern)?.description}
+              </p>
               <div className="field-row">
                 <NumberField
                   label="Cut spacing"
@@ -887,6 +985,21 @@ export default function App() {
                   min={5}
                   max={80}
                 />
+              </div>
+              <div className="swatch-download">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={exportTestSwatches}
+                  aria-label="Download test swatches SVG"
+                >
+                  <ArrowDownToLine size={15} /> Test swatches · SVG
+                </Button>
+                <p className="control-hint">
+                  9 samples vary spacing and bridge by up to 20%. {swatchSize.width.toFixed(0)} ×{' '}
+                  {swatchSize.height.toFixed(0)} mm at 1:1. Black labels: engrave. Red and blue
+                  paths: cut.
+                </p>
               </div>
             </section>
             <section className="cut-summary">
@@ -1079,9 +1192,9 @@ export default function App() {
                 <div>
                   <h3>Give it some give.</h3>
                   <p>
-                    Set your plywood thickness and hinge pattern. Cuts reach the panel edges in
-                    curved sections, with staggered bridges between them. Orbit the preview and
-                    unfold it to see the transformation.
+                    Choose Classic, Graded, Wave, or Zigzag and set your plywood thickness. Cuts
+                    reach the panel edges in curved sections, with staggered bridges between them.
+                    Orbit the preview and unfold it to see the transformation.
                   </p>
                 </div>
               </li>
@@ -1090,8 +1203,9 @@ export default function App() {
                 <div>
                   <h3>Bring it to life.</h3>
                   <p>
-                    Export SVG or DXF in millimetres. Start with a small test: plywood grain, glue,
-                    and laser kerf all affect the real bend.
+                    Download test swatches to compare spacing and bridges in your own plywood. Set
+                    the separate labels layer to engrave. Then export your panel as SVG or DXF in
+                    millimetres; grain, glue, and laser kerf all affect the real bend.
                   </p>
                 </div>
               </li>

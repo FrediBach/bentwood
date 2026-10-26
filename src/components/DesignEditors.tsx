@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { ArrowDownRight, CirclePlus, MousePointer2, Pencil, Plus, Trash2 } from 'lucide-react'
 import type { CutPlan, Design, Point } from '../lib/types'
+import { cutPathData } from '../lib/cut-path'
 import {
   getOutline,
   getPanelWidth,
@@ -577,12 +578,11 @@ export function CutPlanView({
         )}
         <g stroke="#3c699a" strokeWidth={large ? 0.9 : 0.6} vectorEffect="non-scaling-stroke">
           {plan.cuts.map((cut, index) => (
-            <line
+            <path
               key={index}
-              x1={cut.x}
-              y1={cut.y1}
-              x2={cut.x}
-              y2={cut.y2}
+              d={cutPathData(cut)}
+              fill="none"
+              data-hinge-cut=""
               vectorEffect="non-scaling-stroke"
             />
           ))}

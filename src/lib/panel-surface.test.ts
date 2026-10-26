@@ -172,4 +172,74 @@ describe('plywood surface with open-edge kerfs', () => {
     expect(edgeSpans(surface, 0, 5)).toBe(false)
     expect(edgeSpans(surface, 10, 5)).toBe(false)
   })
+
+  it('uses the perpendicular kerf width for diagonal slots', () => {
+    const surface = createPanelSurface(
+      rectangle,
+      [
+        {
+          x: 5,
+          y1: 2,
+          y2: 8,
+          points: [
+            { x: 2, y: 2 },
+            { x: 8, y: 8 },
+          ],
+        },
+      ],
+      1,
+    )
+    expect(surface.polygons).toHaveLength(1)
+    expect(surface.polygons[0].holes).toHaveLength(1)
+    const expectedArea = 100 - Math.hypot(6, 6)
+    expect(surfaceArea(surface)).toBeCloseTo(expectedArea, 10)
+    expect(triangulatedArea(surface)).toBeCloseTo(expectedArea, 10)
+  })
+
+  it('joins zigzag kerfs without islands and preserves the material between separate cuts', () => {
+    const points = [
+      { x: 4, y: 0 },
+      { x: 6, y: 2 },
+      { x: 4, y: 4 },
+    ]
+    const surface = createPanelSurface(
+      rectangle,
+      [
+        { x: 5, y1: 0, y2: 4, points },
+        { x: 5, y1: 6, y2: 10, points: points.map(({ x, y }) => ({ x, y: y + 6 })) },
+      ],
+      0.4,
+    )
+    expect(surface.polygons).toHaveLength(1)
+    expect(surface.polygons[0].holes).toHaveLength(0)
+    expect(edgeSpans(surface, 0, 4)).toBe(false)
+    expect(edgeSpans(surface, 10, 4)).toBe(false)
+    // Neither cut's stroke reaches the two-millimetre uncut bridge.
+    expect(
+      surface.boundaries.every(
+        ({ start, end, kind }) =>
+          kind === 'outer' || (start.y < 4.5 && end.y < 4.5) || (start.y > 5.5 && end.y > 5.5),
+      ),
+    ).toBe(true)
+    expect(triangulatedArea(surface)).toBeCloseTo(surfaceArea(surface), 9)
+  })
+
+  it('triangulates a sampled wave as one continuous hole with no material pinholes', () => {
+    const points = Array.from({ length: 41 }, (_, index) => ({
+      x: 5 + Math.sin((index / 40) * Math.PI * 4),
+      y: 1 + (index / 40) * 8,
+    }))
+    const surface = createPanelSurface(rectangle, [{ x: 5, y1: 1, y2: 9, points }], 0.2)
+    const pathLength = points
+      .slice(1)
+      .reduce(
+        (sum, point, index) =>
+          sum + Math.hypot(point.x - points[index].x, point.y - points[index].y),
+        0,
+      )
+    expect(surface.polygons).toHaveLength(1)
+    expect(surface.polygons[0].holes).toHaveLength(1)
+    expect(surfaceArea(surface)).toBeCloseTo(100 - pathLength * 0.2, 9)
+    expect(triangulatedArea(surface)).toBeCloseTo(surfaceArea(surface), 9)
+  })
 })

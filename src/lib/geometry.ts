@@ -1,4 +1,12 @@
 import type { CutLine, CutPlan, Design, PathSample, Point, Segment } from './types'
+import { cutPathData, cutPathLength, getCutPoints } from './cut-path'
+import {
+  clipPatternColumn,
+  MAX_PATTERN_SEGMENTS,
+  patternColumn,
+  patternShape,
+  slicePatternSpan,
+} from './hinge-patterns'
 
 const TAU = Math.PI * 2
 const EPS = 1e-7
@@ -48,7 +56,7 @@ export const presets: { id: string; name: string; description: string; segments:
 ]
 
 export const defaultDesign: Design = {
-  version: 2,
+  version: 3,
   name: 'Untitled form',
   segments: presets[0].segments.map((segment) => ({ ...segment })),
   outline: 'rectangle',
@@ -65,6 +73,7 @@ export const defaultDesign: Design = {
   bridge: 2,
   cutLength: 24,
   kerf: 0.15,
+  pattern: 'classic',
 }
 
 export function segmentLength(segment: Segment): number {
@@ -290,9 +299,14 @@ export function createCutPlan(design: Design): CutPlan {
     )
   if (pathOverlaps(design.segments))
     warnings.push('The bend path crosses itself. The assembled panel may collide.')
-  if (design.spacing <= design.kerf || design.bridge <= design.kerf)
+  const shaped = design.pattern === 'wave' || design.pattern === 'zigzag'
+  const shape = patternShape(design)
+  const minimumSpacing = shaped
+    ? (design.spacing - shape.amplitude) / Math.hypot(1, shape.slope)
+    : design.spacing
+  if (minimumSpacing <= design.kerf || design.bridge <= design.kerf)
     warnings.push(
-      'The laser kerf is as wide as a ligament or bridge. Increase spacing or bridge size.',
+      'The laser kerf is as wide as a ligament or bridge. Increase spacing or bridge size before exporting.',
     )
   const period = Math.max(0.5, design.cutLength + design.bridge)
   const spacing = Math.max(0.5, design.spacing)
@@ -306,18 +320,74 @@ export function createCutPlan(design: Design): CutPlan {
     warnings.push(
       'This pattern exceeds 50,000 cuts. Increase spacing or cut length before exporting.',
     )
+  const estimatedSegments = shaped
+    ? design.segments
+        .filter((s) => s.type === 'arc')
+        .reduce((sum, s) => sum + segmentLength(s) / spacing, 0) *
+      ((width / shape.period) * shape.samples + 2 * (width / period + 2))
+    : estimatedCuts
+  if (estimatedSegments > MAX_PATTERN_SEGMENTS)
+    warnings.push(
+      'This pattern exceeds 250,000 toolpath segments. Increase spacing or cut length before exporting.',
+    )
+  const minimumRadius = Math.min(
+    ...design.segments.filter((s) => s.type === 'arc').map((s) => s.radius),
+  )
   let skippedNarrowSpans = false
-  if (validOutline && estimatedCuts <= 50000) {
+  if (validOutline && estimatedCuts <= 50000 && estimatedSegments <= MAX_PATTERN_SEGMENTS) {
     let start = 0
-    for (const segment of design.segments) {
+    let previousColumn = -Infinity
+    let bridgePhase = 0
+    let toolpathSegments = 0
+    generation: for (const segment of design.segments) {
       const segmentSize = segmentLength(segment)
       if (segment.type === 'arc') {
-        for (let column = 0; (column + 0.5) * spacing < segmentSize; column++) {
-          const x = start + (column + 0.5) * spacing
-          for (const [lower, upper] of outlineIntervals(design, outline, x)) {
-            const columnCuts = edgeOpenCuts(x, lower, upper, column, design)
-            if (columnCuts) cuts.push(...columnCuts)
-            else skippedNarrowSpans = true
+        const localSpacing =
+          design.pattern === 'graded'
+            ? spacing * Math.min(2, segment.radius / minimumRadius)
+            : spacing
+        for (let column = 0; (column + 0.5) * localSpacing < segmentSize; column++) {
+          const localX = (column + 0.5) * localSpacing
+          const x = start + localX
+          const boundaryDistance = Math.min(localX, segmentSize - localX)
+          // Independent arc grids can otherwise put two cuts almost on top of
+          // one another at a join. Carry both clearance and bridge phase across.
+          if (x - previousColumn < spacing - EPS) continue
+          if (shaped && boundaryDistance <= shape.edgeClearance) continue
+          previousColumn = x
+          const phase = bridgePhase++
+          const spans = shaped
+            ? clipPatternColumn(
+                patternColumn(design, x, width, boundaryDistance),
+                outline,
+                design.outline === 'circle' || design.outline === 'ellipse',
+                length,
+                width,
+              )
+            : outlineIntervals(design, outline, x).map(([lower, upper]) => [
+                { x, y: lower },
+                { x, y: upper },
+              ])
+          for (const span of spans) {
+            const lower = span[0].y,
+              upper = span.at(-1)!.y
+            const columnCuts = edgeOpenCuts(x, lower, upper, phase, design)
+            if (columnCuts) {
+              const paths = columnCuts.map((cut) =>
+                shaped ? { ...cut, points: slicePatternSpan(span, cut.y1, cut.y2) } : cut,
+              )
+              toolpathSegments += paths.reduce((sum, cut) => sum + getCutPoints(cut).length - 1, 0)
+              if (cuts.length + paths.length > 50000 || toolpathSegments > MAX_PATTERN_SEGMENTS) {
+                warnings.push(
+                  cuts.length + paths.length > 50000
+                    ? 'This pattern exceeds 50,000 cuts. Increase spacing or cut length before exporting.'
+                    : 'This pattern exceeds 250,000 toolpath segments. Increase spacing or cut length before exporting.',
+                )
+                cuts.length = 0
+                break generation
+              }
+              cuts.push(...paths)
+            } else skippedNarrowSpans = true
           }
         }
       }
@@ -332,7 +402,7 @@ export function createCutPlan(design: Design): CutPlan {
     validOutline &&
     !cuts.length &&
     design.segments.some((segment) => segment.type === 'arc') &&
-    estimatedCuts <= 50000
+    !warnings.some((warning) => warning.includes('50,000') || warning.includes('250,000'))
   )
     warnings.push(
       'No hinge cuts fit inside the outline. Increase the panel size or reduce the bridge size.',
@@ -346,7 +416,7 @@ export function createCutPlan(design: Design): CutPlan {
     width,
     outline,
     cuts,
-    cutLength: perimeter + cuts.reduce((sum, cut) => sum + cut.y2 - cut.y1, 0),
+    cutLength: perimeter + cuts.reduce((sum, cut) => sum + cutPathLength(cut), 0),
     warnings,
   }
 }
@@ -359,32 +429,34 @@ const xmlEscape = (value: string) =>
       ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' })[character]!,
   )
 
-function exportPlan(design: Design) {
+export function createExportPlan(design: Design) {
   const plan = createCutPlan(design)
   if (!isSimplePolygon(plan.outline)) throw new Error('Fix the outline before exporting.')
-  if (plan.warnings.some((warning) => warning.includes('50,000')))
+  if (plan.warnings.some((warning) => warning.includes('50,000') || warning.includes('250,000')))
     throw new Error('Reduce the number of hinge cuts before exporting.')
+  if (plan.warnings.some((warning) => warning.includes('laser kerf')))
+    throw new Error(
+      'Increase spacing or bridge size so the laser kerf leaves connected material before exporting.',
+    )
   return plan
 }
 
 /** SVG drawing units are millimetres. Paths are tool centerlines; no kerf offset is applied. */
 export function exportSVG(design: Design): string {
-  const plan = exportPlan(design)
+  const plan = createExportPlan(design)
   const ellipse = design.outline === 'circle' || design.outline === 'ellipse'
   const outlinePath = ellipse
     ? `M0 ${number(plan.width / 2)} A${number(plan.length / 2)} ${number(plan.width / 2)} 0 1 0 ${number(plan.length)} ${number(plan.width / 2)} A${number(plan.length / 2)} ${number(plan.width / 2)} 0 1 0 0 ${number(plan.width / 2)} Z`
     : plan.outline
         .map((point, i) => `${i ? 'L' : 'M'}${number(point.x)} ${number(point.y)}`)
         .join(' ') + ' Z'
-  const slots = plan.cuts
-    .map((cut) => `    <path d="M${number(cut.x)} ${number(cut.y1)} V${number(cut.y2)}"/>`)
-    .join('\n')
+  const slots = plan.cuts.map((cut) => `    <path d="${cutPathData(cut)}"/>`).join('\n')
   return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${number(plan.length)}mm" height="${number(plan.width)}mm" viewBox="0 0 ${number(plan.length)} ${number(plan.width)}">\n  <title>${xmlEscape(design.name)} — Bentwood laser cut plan</title>\n  <desc>Millimetres. Red: outer contour. Blue: living hinge cuts. Tool centerlines; no kerf compensation. Material ${design.material}, thickness ${number(design.thickness)} mm, nominal kerf ${number(design.kerf)} mm. Test material before production.</desc>\n  <g id="hinge-cuts" fill="none" stroke="#0000ff" stroke-width="0.01">\n${slots}\n  </g>\n  <g id="outer-contour" fill="none" stroke="#ff0000" stroke-width="0.01">\n    <path d="${outlinePath}"/>\n  </g>\n</svg>\n`
 }
 
 /** R2000 ASCII DXF with millimetre insertion units and distinct cut layers. */
 export function exportDXF(design: Design): string {
-  const plan = exportPlan(design)
+  const plan = createExportPlan(design)
   const parts = [
     '999',
     `Bentwood: millimetres, tool centerlines, no kerf compensation. Thickness ${number(design.thickness)} mm; nominal kerf ${number(design.kerf)} mm.`,
@@ -478,7 +550,10 @@ export function exportDXF(design: Design): string {
       '31',
       '0',
     )
-  for (const cut of plan.cuts) line('HINGE_CUTS', { x: cut.x, y: cut.y1 }, { x: cut.x, y: cut.y2 })
+  for (const cut of plan.cuts) {
+    const points = getCutPoints(cut)
+    for (let i = 1; i < points.length; i++) line('HINGE_CUTS', points[i - 1], points[i])
+  }
   if (design.outline === 'circle') {
     parts.push(
       '0',
@@ -583,7 +658,7 @@ export function validateDesign(input: unknown): Design | null {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return null
   const value = input as Record<string, unknown>
   if (
-    (value.version !== 1 && value.version !== 2) ||
+    (value.version !== 1 && value.version !== 2 && value.version !== 3) ||
     typeof value.name !== 'string' ||
     value.name.length > 100 ||
     !Array.isArray(value.segments) ||
@@ -594,6 +669,11 @@ export function validateDesign(input: unknown): Design | null {
   // Legacy projects used a perimeter rail. Drop it on migration so saved designs
   // receive the corrected edge-open hinge behavior without losing other settings.
   if (value.version === 1 && value.edgeMargin !== undefined && !inRange(value.edgeMargin, 0, 100))
+    return null
+  if (
+    value.version === 3 &&
+    !['classic', 'graded', 'wave', 'zigzag'].includes(value.pattern as string)
+  )
     return null
   const segments: Segment[] = []
   const ids = new Set<string>()
@@ -654,7 +734,7 @@ export function validateDesign(input: unknown): Design | null {
   }
   if (!isSimplePolygon(customOutline)) return null
   const result: Design = {
-    version: 2,
+    version: 3,
     name: value.name,
     segments,
     outline: value.outline as Design['outline'],
@@ -666,6 +746,7 @@ export function validateDesign(input: unknown): Design | null {
     bridge: value.bridge,
     cutLength: value.cutLength,
     kerf: value.kerf,
+    pattern: value.version === 3 ? (value.pattern as Design['pattern']) : 'classic',
   }
   const curvedLength = segments
     .filter((segment) => segment.type === 'arc')
@@ -676,5 +757,15 @@ export function validateDesign(input: unknown): Design | null {
     50000
   )
     return null
+  if (result.pattern === 'wave' || result.pattern === 'zigzag') {
+    const shape = patternShape(result)
+    if (
+      (curvedLength / result.spacing) *
+        ((getPanelWidth(result) / shape.period) * shape.samples +
+          2 * (getPanelWidth(result) / (result.cutLength + result.bridge) + 2)) >
+      MAX_PATTERN_SEGMENTS
+    )
+      return null
+  }
   return result
 }
