@@ -1274,6 +1274,14 @@ svg {
   display: flex;
   gap: 10px;
 }
+.bend-path-export {
+  margin-top: 20px;
+  padding-bottom: 0;
+  border-top: 1px solid var(--line);
+}
+.bend-path-export button {
+  margin-top: 12px;
+}
 .dialog-actions > * {
   flex: 1;
 }

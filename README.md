@@ -106,6 +106,12 @@ All exported paths are **laser centre lines**. Nominal kerf is used in the visua
 
 Exports are blocked when the nominal kerf is too wide to preserve a bridge or the estimated minimum material between neighboring cuts. Increase spacing or bridge size before exporting. These clearance checks include the slope and amplitude of Wavy slits and Zigzag paths; passing them does not establish a material’s strength or bendability.
 
+## Bend path export
+
+Choose **Export → Download bend path SVG** to download the fully bent panel’s top-view centreline for laying out a routed base. The file uses **millimetres at 1:1 scale**, with exact straight lines and circular arcs, in the same orientation as the bend-path editor. It contains one unfilled grey path, without hinge cuts, labels, or a closing line between the endpoints. Full-circle bends retain their complete circumference. A 1 mm canvas margin keeps the stroke visible, including for straight-only paths; it does not alter the path’s dimensions.
+
+The path follows the panel’s **neutral axis**, not either surface of the plywood. It does not include a groove outline, thickness offset, cutter compensation, or fit allowance. Choose the groove width and depth for your actual plywood in your router/CAM workflow. On Shaper Origin, use an **On Line** cut; the cutter centres on the path, and stroke width does not set groove width ([Shaper’s cut type documentation](https://support.shapertools.com/hc/en-us/articles/115002721473-Cut-Type-Encoding)). The export always uses the fully bent design, regardless of the preview’s unfold slider, and is available independently of laser-pattern clearance checks.
+
 ## Geometry and physical limits
 
 - The bend path is a sequence of straight lines and circular arcs, measured at the sheet’s neutral axis. Unrolled length is the sum of straight lengths and arc lengths (`radius × angle in radians`).

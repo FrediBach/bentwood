@@ -57,6 +57,7 @@ export default function App() {
     shape,
     importOutline,
     exportFile,
+    exportBendPath,
     exportTestSwatches,
   } = useStudio()
   return (
@@ -174,6 +175,7 @@ export default function App() {
           design={design}
           plan={plan}
           exportFile={exportFile}
+          exportBendPath={exportBendPath}
           helpOpen={helpOpen}
           setHelpOpen={setHelpOpen}
         />

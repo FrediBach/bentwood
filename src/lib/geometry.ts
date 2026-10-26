@@ -588,6 +588,80 @@ export function exportSVG(design: Design): string {
   return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${number(plan.length)}mm" height="${number(plan.width)}mm" viewBox="0 0 ${number(plan.length)} ${number(plan.width)}">\n  <title>${xmlEscape(design.name)} — Bentwood laser cut plan</title>\n  <desc>Millimetres. Red: outer contour. Blue: living hinge cuts. Tool centerlines; no kerf compensation. Material ${design.material}, thickness ${number(design.thickness)} mm, nominal kerf ${number(design.kerf)} mm. Test material before production.</desc>\n  <g id="hinge-cuts" transform="translate(0 ${number(plan.width)}) scale(1 -1)" fill="none" stroke="#0000ff" stroke-width="0.01">\n${slots}\n  </g>\n  <g id="outer-contour" transform="translate(0 ${number(plan.width)}) scale(1 -1)" fill="none" stroke="#ff0000" stroke-width="0.01">\n    <path d="${outlinePath}"/>\n  </g>\n</svg>\n`
 }
 
+/** Top-view neutral axis, in the same orientation as the bend-path editor.
+ * A single unfilled path supports on-line routing; thickness is not a groove offset. */
+export function exportBendPathSVG(design: Design): string {
+  const { segments } = design
+  if (
+    !segments.length ||
+    segments.length > 50 ||
+    segments.some((segment) =>
+      segment.type === 'straight'
+        ? !Number.isFinite(segment.length) || segment.length <= 0
+        : !Number.isFinite(segment.radius) ||
+          segment.radius <= 0 ||
+          !Number.isFinite(segment.angle) ||
+          segment.angle === 0 ||
+          Math.abs(segment.angle) > 360,
+    ) ||
+    pathLength(segments) > 10000
+  )
+    throw new Error('Set a valid bend path before exporting.')
+
+  const commands: { point: Point; arc?: { radius: number; sweep: number } }[] = [
+    { point: { x: 0, y: 0 } },
+  ]
+  const bounds: Point[] = [{ x: 0, y: 0 }]
+  let position = 0
+  for (const segment of segments) {
+    const length = segmentLength(segment)
+    const start = samplePath(segments, position)
+    if (segment.type === 'arc') {
+      const turn = radians(segment.angle)
+      const endAngle = start.angle + turn
+      // Include exact extrema, even when they fall between arc endpoints.
+      const quarter = Math.PI / 2
+      for (
+        let i = Math.ceil(Math.min(start.angle, endAngle) / quarter);
+        i <= Math.floor(Math.max(start.angle, endAngle) / quarter);
+        i++
+      ) {
+        bounds.push(samplePath(segments, position + ((i * quarter - start.angle) / turn) * length))
+      }
+      // SVG cannot represent a full circle with one arc and coincident endpoints.
+      const pieces = Math.ceil(Math.abs(segment.angle) / 180)
+      for (let i = 1; i <= pieces; i++) {
+        commands.push({
+          point: samplePath(segments, position + (length * i) / pieces),
+          arc: { radius: segment.radius, sweep: segment.angle > 0 ? 1 : 0 },
+        })
+      }
+    } else {
+      commands.push({ point: samplePath(segments, position + length) })
+    }
+    position += length
+    bounds.push(samplePath(segments, position))
+  }
+
+  // A 1 mm canvas margin keeps strokes visible and gives straight-only paths
+  // a nonzero viewport, without changing the scale or adding cutting geometry.
+  const minX = Math.min(...bounds.map((point) => point.x)) - 1
+  const minY = Math.min(...bounds.map((point) => point.y)) - 1
+  const width = Math.max(...bounds.map((point) => point.x)) - minX + 1
+  const height = Math.max(...bounds.map((point) => point.y)) - minY + 1
+  const d = commands
+    .map(({ point, arc }, index) => {
+      const command = arc
+        ? `A${number(arc.radius)} ${number(arc.radius)} 0 0 ${arc.sweep}`
+        : index === 0
+          ? 'M'
+          : 'L'
+      return `${command} ${number(point.x - minX)} ${number(point.y - minY)}`
+    })
+    .join(' ')
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="${number(width)}mm" height="${number(height)}mm" viewBox="0 0 ${number(width)} ${number(height)}">\n  <title>${xmlEscape(design.name)} — Bentwood bend path</title>\n  <desc>Millimetres, 1:1 scale. Top-view panel centreline (neutral axis), fully bent. Plywood thickness ${number(design.thickness)} mm. No thickness, cutter, or fit offset applied. Set groove width and depth in your router software. Canvas includes a 1 mm margin.</desc>\n  <path id="bend-path" d="${d}" fill="none" stroke="#808080" stroke-width="0.1"/>\n</svg>\n`
+}
+
 /** R2000 ASCII DXF with millimetre insertion units and distinct cut layers. */
 export function exportDXF(design: Design): string {
   const plan = createExportPlan(design)

@@ -109,7 +109,7 @@ test('SVG outline import preserves proportions, orientation, undo and saved geom
   await page.getByRole('button', { name: 'Flat outline', exact: true }).click()
   await expect(contour).toHaveAttribute('points', importedContour!)
 
-  await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
+  await page.getByRole('button', { name: 'Export', exact: true }).click()
   let exportedSVG = ''
   for (const format of ['SVG', 'DXF']) {
     const pending = page.waitForEvent('download')

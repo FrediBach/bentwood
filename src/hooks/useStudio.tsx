@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   createCutPlan,
   defaultDesign,
+  exportBendPathSVG,
   exportDXF,
   exportSVG,
   pathLength,
@@ -235,6 +236,14 @@ export function useStudio() {
       setNotice(error instanceof Error ? error.message : 'The cut plan could not be exported.')
     }
   }
+  function exportBendPath() {
+    try {
+      download(exportBendPathSVG(design), `${filename}-bend-path.svg`, 'image/svg+xml')
+      setNotice('Bend path SVG downloaded at 1:1 scale.')
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : 'The bend path could not be exported.')
+    }
+  }
   function exportTestSwatches() {
     try {
       download(
@@ -298,6 +307,7 @@ export function useStudio() {
     shape,
     importOutline,
     exportFile,
+    exportBendPath,
     exportTestSwatches,
   }
 }

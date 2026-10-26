@@ -10,6 +10,7 @@ export function StudioDialogs({
   design,
   plan,
   exportFile,
+  exportBendPath,
   helpOpen,
   setHelpOpen,
 }: {
@@ -18,6 +19,7 @@ export function StudioDialogs({
   design: Design
   plan: CutPlan
   exportFile: (format: 'svg' | 'dxf') => void
+  exportBendPath: () => void
   helpOpen: boolean
   setHelpOpen: React.Dispatch<React.SetStateAction<boolean>>
 }) {
@@ -30,8 +32,8 @@ export function StudioDialogs({
           </div>
           <DialogTitle>From your screen to your workshop.</DialogTitle>
           <DialogDescription>
-            Your cut plan is a 1:1 vector file in millimetres. Import it into your laser software
-            without scaling.
+            Export your laser cut plan or bend path at 1:1 scale in millimetres. Import without
+            scaling.
           </DialogDescription>
           <div className="export-preview">
             <CutPlanView design={design} plan={plan} large={false} />
@@ -74,6 +76,19 @@ export function StudioDialogs({
             <Button onClick={() => exportFile('svg')}>
               <ArrowDownToLine size={16} />
               Download SVG
+            </Button>
+          </div>
+          <div className="bend-path-export export-note">
+            <strong>A base for your bend</strong>
+            <p>
+              Download the fully bent panel’s centreline, viewed from above, to lay out a routed
+              base. For Shaper Origin, use an on-line cut. This is a single path; set the groove
+              width, fit allowance, and depth in your router software for your {design.thickness} mm
+              plywood.
+            </p>
+            <Button variant="outline" className="full-width" onClick={exportBendPath}>
+              <ArrowDownToLine size={16} />
+              Download bend path SVG
             </Button>
           </div>
         </DialogContent>

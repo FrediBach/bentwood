@@ -119,7 +119,7 @@ test('custom outline keyboard editing and exact cut downloads', async ({ page })
   expect(
     results.violations.map((v) => ({ id: v.id, nodes: v.nodes.map((n) => n.target) })),
   ).toEqual([])
-  await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
+  await page.getByRole('button', { name: 'Export', exact: true }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
   for (const format of ['SVG', 'DXF']) {
     const pending = page.waitForEvent('download')
@@ -258,7 +258,7 @@ test('corner rounding survives undo, saving and export without replacing editabl
       .locator('.cut-plan-view [data-outline-contour]')
       .evaluate((element) => (element as SVGPolygonElement).points.numberOfItems),
   ).toBeGreaterThan(20)
-  await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
+  await page.getByRole('button', { name: 'Export', exact: true }).click()
   for (const format of ['SVG', 'DXF']) {
     const pending = page.waitForEvent('download')
     await page.getByRole('button', { name: `Download ${format}`, exact: true }).click()
@@ -348,7 +348,7 @@ test('mobile panels and accessible export dialog', async ({ page }) => {
   ).toEqual([])
   await meander.scrollIntoViewIfNeeded()
   await page.screenshot({ path: 'test-results/patterns-mobile.png' })
-  await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
+  await page.getByRole('button', { name: 'Export', exact: true }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
   const results = await new AxeBuilder({ page })
     .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
@@ -480,7 +480,7 @@ test('hinge patterns update previews, exports and saved projects with test swatc
   expect(project.version).toBe(4)
   await page.reload()
   await expect(pattern('Wavy slits')).toBeChecked()
-  await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
+  await page.getByRole('button', { name: 'Export', exact: true }).click()
   const exported = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Download SVG', exact: true }).click()
   const svgFile = await exported
@@ -610,7 +610,7 @@ for (const pattern of [
       page.getByRole('spinbutton', { name: 'Opening width %', exact: true }),
     ).toHaveValue(String(pattern.openingWidth * 100))
 
-    await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
+    await page.getByRole('button', { name: 'Export', exact: true }).click()
     const exported = page.waitForEvent('download')
     await page.getByRole('button', { name: 'Download SVG', exact: true }).click()
     const svgFile = await exported
@@ -704,7 +704,7 @@ for (const pattern of [
       String(Number((pattern.overlap * 100).toFixed(4))),
     )
 
-    await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
+    await page.getByRole('button', { name: 'Export', exact: true }).click()
     const exported = page.waitForEvent('download')
     await page.getByRole('button', { name: 'Download SVG', exact: true }).click()
     const svgFile = await exported
@@ -782,7 +782,7 @@ test('parametric families preserve intermediate shapes through undo, saving and 
   await page.reload()
   await expect(roundness).toHaveValue('37.5')
   await expect(opening).toHaveValue('72')
-  await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
+  await page.getByRole('button', { name: 'Export', exact: true }).click()
   let exported = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Download SVG', exact: true }).click()
   let svgFile = await exported
@@ -821,7 +821,7 @@ test('parametric families preserve intermediate shapes through undo, saving and 
   await page.reload()
   await expect(overlap).toHaveValue('12.5')
   await expect(cutLength).toHaveValue('28')
-  await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
+  await page.getByRole('button', { name: 'Export', exact: true }).click()
   exported = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Download SVG', exact: true }).click()
   svgFile = await exported

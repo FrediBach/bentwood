@@ -97,7 +97,7 @@ export function StudioNavigation({
           </Button>
           <Button onClick={() => setExportOpen(true)} className="export-button">
             <ArrowDownToLine size={16} />
-            <span>Export cut plan</span>
+            <span>Export</span>
             <ArrowRight size={16} />
           </Button>
         </div>
