@@ -116,7 +116,7 @@ export function BendPathEditor({
       >
         <defs>
           <pattern id={gridId} width={span / 12} height={span / 12} patternUnits="userSpaceOnUse">
-            <circle cx="0" cy="0" r={span / 550} fill="#bec6b9" />
+            <circle cx="0" cy="0" r={span / 550} fill="#d0bea3" />
           </pattern>
         </defs>
         <rect
@@ -131,7 +131,7 @@ export function BendPathEditor({
             <polyline
               points={pointString(sectionPoints)}
               fill="none"
-              stroke={segment.id === selectedId ? '#325b44' : '#8d9b8b'}
+              stroke={segment.id === selectedId ? '#4a3025' : '#9b928b'}
               strokeWidth={segment.id === selectedId ? 4 : 2.5}
               vectorEffect="non-scaling-stroke"
               strokeLinecap="round"
@@ -159,8 +159,8 @@ export function BendPathEditor({
               cx={sectionPoints[0].x}
               cy={sectionPoints[0].y}
               r={handleSize}
-              fill="#f7f7f2"
-              stroke="#325b44"
+              fill="#fbf6ea"
+              stroke="#4a3025"
               strokeWidth="1.5"
               vectorEffect="non-scaling-stroke"
               pointerEvents="none"
@@ -168,7 +168,7 @@ export function BendPathEditor({
           </g>
         ))}
         {points.length > 0 && (
-          <circle cx={points.at(-1)!.x} cy={points.at(-1)!.y} r={handleSize} fill="#325b44" />
+          <circle cx={points.at(-1)!.x} cy={points.at(-1)!.y} r={handleSize} fill="#4a3025" />
         )}
       </svg>
       <div className="bend-path-caption">
@@ -196,8 +196,8 @@ function DimensionLines({
   const fontSize = Math.max(length, width) / 44
   return (
     <g
-      fill="#667261"
-      stroke="#a6afa2"
+      fill="#726861"
+      stroke="#afa7a2"
       strokeWidth="1"
       className="plan-dimensions"
       aria-hidden="true"
@@ -338,7 +338,7 @@ export function OutlineEditor({
               <path
                 d="M10 0H0V10"
                 fill="none"
-                stroke="#cbd2c5"
+                stroke="#d0bea3"
                 strokeWidth="0.4"
                 vectorEffect="non-scaling-stroke"
               />
@@ -350,7 +350,7 @@ export function OutlineEditor({
             width={length}
             height={width}
             fill={`url(#${gridId})`}
-            stroke="#b7c0af"
+            stroke="#c0b6af"
             strokeWidth="1"
             strokeDasharray="3 4"
             vectorEffect="non-scaling-stroke"
@@ -360,7 +360,7 @@ export function OutlineEditor({
             points={pointString(outline)}
             fill="#e9d9b6"
             fillOpacity="0.68"
-            stroke="#365b43"
+            stroke="#4a3025"
             strokeWidth="2"
             vectorEffect="non-scaling-stroke"
           />
@@ -417,8 +417,8 @@ export function OutlineEditor({
                     cx={point.x * length}
                     cy={point.y * width}
                     r={marker}
-                    fill={selectedIndex === index ? '#365b43' : '#fffef7'}
-                    stroke="#365b43"
+                    fill={selectedIndex === index ? '#4a3025' : '#fffbf2'}
+                    stroke="#4a3025"
                     strokeWidth="1.8"
                     vectorEffect="non-scaling-stroke"
                     pointerEvents="none"
@@ -427,7 +427,7 @@ export function OutlineEditor({
                     <text
                       x={point.x * length + marker * 1.9}
                       y={point.y * width - marker * 1.9}
-                      fill="#244d3e"
+                      fill="#4a3025"
                       fontSize={marker * 2.4}
                       fontWeight="600"
                       pointerEvents="none"
@@ -541,7 +541,7 @@ export function CutPlanView({
       >
         <defs>
           <pattern id={id} width="10" height="10" patternUnits="userSpaceOnUse">
-            <circle cx="0" cy="0" r="0.35" fill="#bdc6b5" />
+            <circle cx="0" cy="0" r="0.35" fill="#c6bcb5" />
           </pattern>
         </defs>
         {large && (

@@ -1,3 +1,4 @@
+import BrandMark from './components/BrandMark'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
   ArrowDownToLine,
@@ -143,18 +144,6 @@ function IconButton({
         {children}
       </Button>
     </Tooltip>
-  )
-}
-function Logo() {
-  return (
-    <svg viewBox="0 0 38 38" fill="none" aria-hidden="true">
-      <rect width="38" height="38" rx="10" fill="currentColor" />
-      <path
-        d="M9 10v13a10 10 0 0 0 20 0V10M14 10v13a5 5 0 0 0 10 0V10"
-        stroke="#eff4d8"
-        strokeWidth="2.2"
-      />
-    </svg>
   )
 }
 function PresetDrawing({ segments }: { segments: Segment[] }) {
@@ -354,7 +343,7 @@ export default function App() {
       <div className="app-shell">
         <header className="app-header">
           <a className="brand" href="/" aria-label="Bentwood home">
-            <Logo />
+            <BrandMark />
             <span>
               bentwood<span className="brand-period">.</span>
             </span>

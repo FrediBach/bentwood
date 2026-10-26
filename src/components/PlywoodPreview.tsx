@@ -120,9 +120,9 @@ function shadowTexture() {
   canvas.width = canvas.height = 128
   const ctx = canvas.getContext('2d')!
   const gradient = ctx.createRadialGradient(64, 64, 3, 64, 64, 64)
-  gradient.addColorStop(0, 'rgba(34, 43, 30, 0.22)')
-  gradient.addColorStop(0.45, 'rgba(34, 43, 30, 0.13)')
-  gradient.addColorStop(1, 'rgba(34, 43, 30, 0)')
+  gradient.addColorStop(0, 'rgba(43, 35, 30, 0.22)')
+  gradient.addColorStop(0.45, 'rgba(43, 35, 30, 0.13)')
+  gradient.addColorStop(1, 'rgba(43, 35, 30, 0)')
   ctx.fillStyle = gradient
   ctx.fillRect(0, 0, 128, 128)
   return new THREE.CanvasTexture(canvas)
@@ -338,7 +338,7 @@ export default function PlywoodPreview({
     renderer.shadowMap.type = THREE.PCFSoftShadowMap
     renderer.toneMapping = THREE.ACESFilmicToneMapping
     renderer.toneMappingExposure = 1.14
-    renderer.setClearColor('#e9ede7', 1)
+    renderer.setClearColor('#eee5d5', 1)
     renderer.domElement.setAttribute(
       'aria-label',
       'Interactive plywood preview. Drag to rotate, scroll to zoom. Arrow keys rotate, plus and minus zoom, Home resets the camera.',
@@ -349,7 +349,7 @@ export default function PlywoodPreview({
       'display:block;width:100%;height:100%;outline-offset:-3px;touch-action:none;'
     container.appendChild(renderer.domElement)
     const scene = new THREE.Scene()
-    scene.fog = new THREE.Fog('#e9ede7', 850, 2100)
+    scene.fog = new THREE.Fog('#eee5d5', 850, 2100)
     const camera = new THREE.PerspectiveCamera(34, 1, 0.5, 8000)
     const controls = new OrbitControls(camera, renderer.domElement)
     controls.enableDamping = false
@@ -359,7 +359,7 @@ export default function PlywoodPreview({
     controls.screenSpacePanning = true
     controls.rotateSpeed = 0.65
     controls.zoomSpeed = 0.8
-    const ambient = new THREE.HemisphereLight('#fff8e9', '#b4c0ae', 2.3)
+    const ambient = new THREE.HemisphereLight('#fff8e9', '#c4b599', 2.3)
     scene.add(ambient)
     const keyLight = new THREE.DirectionalLight('#fff3d6', 3.5)
     keyLight.position.set(-210, 420, 240)
@@ -380,13 +380,13 @@ export default function PlywoodPreview({
     scene.add(fill)
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(7000, 7000),
-      new THREE.MeshStandardMaterial({ color: '#e9ede7', roughness: 1 }),
+      new THREE.MeshStandardMaterial({ color: '#eee5d5', roughness: 1 }),
     )
     floor.rotation.x = -Math.PI / 2
     floor.position.y = -0.8
     floor.receiveShadow = true
     scene.add(floor)
-    const grid = new THREE.GridHelper(2000, 100, '#c7d0c3', '#d7dfd3')
+    const grid = new THREE.GridHelper(2000, 100, '#d1c4ad', '#dfd2bb')
     grid.position.y = -0.7
     const gridMaterial = grid.material as THREE.Material
     gridMaterial.transparent = true
@@ -560,8 +560,8 @@ export default function PlywoodPreview({
             left: 16,
             bottom: 16,
             fontSize: 12,
-            color: '#415145',
-            background: '#f7f9f2e8',
+            color: '#514841',
+            background: '#fbf6eae8',
             padding: '6px 10px',
             borderRadius: 6,
           }}
@@ -579,8 +579,8 @@ export default function PlywoodPreview({
             placeContent: 'center',
             padding: 32,
             textAlign: 'center',
-            background: '#e9ede7',
-            color: '#34463a',
+            background: '#eee5d5',
+            color: '#463c34',
             zIndex: 1,
           }}
         >

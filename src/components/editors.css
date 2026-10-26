@@ -1,7 +1,7 @@
 .bend-path-editor {
-  border: 1px solid #dfe3d9;
+  border: 1px solid #e0d3bd;
   border-radius: 9px;
-  background: #f4f5ee;
+  background: #f6eedf;
   overflow: hidden;
 }
 .bend-path-svg {
@@ -14,9 +14,9 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 11px;
-  background: #f9faf5;
-  border-top: 1px solid #e4e7dd;
-  color: #5a6658;
+  background: #fbf6ea;
+  border-top: 1px solid #eee3cf;
+  color: #665e58;
   font-size: 11px;
   font-weight: 500;
 }
@@ -54,18 +54,18 @@
   font-size: 10px;
   font-weight: 650;
   letter-spacing: 1.7px;
-  color: #64715e;
+  color: #71665e;
 }
 .drawing-heading h2 {
   font-size: 23px;
   font-weight: 500;
   letter-spacing: -0.8px;
-  color: #263e2d;
+  color: #3e3026;
   margin: 7px 0 0;
 }
 .drawing-scale {
   font-size: 11px;
-  color: #5c6858;
+  color: #685f58;
   white-space: nowrap;
 }
 .outline-drawing-area {
@@ -104,8 +104,8 @@
   justify-content: center;
   gap: 12px;
   padding: 12px 16px;
-  border: 1px solid #d9dfd1;
-  background: rgba(255, 255, 250, 0.9);
+  border: 1px solid #e0d3bd;
+  background: rgba(251, 246, 234, 0.95);
   border-radius: 9px;
   align-self: center;
   flex-wrap: wrap;
@@ -116,7 +116,7 @@
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: #34543c;
+  color: #544134;
   font-weight: 600;
   white-space: nowrap;
 }
@@ -125,17 +125,17 @@
   align-items: center;
   gap: 5px;
   font-size: 11px;
-  color: #5c6858;
+  color: #685f58;
 }
 .vertex-controls input {
   width: 63px;
-  border: 1px solid #c8d1c0;
+  border: 1px solid #d0bea3;
   border-radius: 5px;
-  background: #fffef9;
+  background: #fffbf2;
   padding: 5px 4px 5px 7px;
   font-family: inherit;
   font-size: 12px;
-  color: #2c4031;
+  color: #40342c;
 }
 .vertex-controls label > span {
   font-size: 10px;
@@ -147,10 +147,10 @@
   justify-content: center;
   align-items: center;
   gap: 6px;
-  border: 1px solid #cfd8c5;
+  border: 1px solid #d0bea3;
   border-radius: 6px;
-  background: #f9fbf4;
-  color: #34543c;
+  background: #fbf6ea;
+  color: #544134;
   font-family: inherit;
   font-size: 12px;
   font-weight: 550;
@@ -160,7 +160,7 @@
 }
 .editor-tool-button:hover,
 .outline-custom-button:hover {
-  background: #e8eddf;
+  background: #eee3cf;
 }
 .editor-tool-button:disabled {
   opacity: 0.45;
@@ -178,7 +178,7 @@
 .drawing-instructions {
   font-size: 11px;
   text-align: center;
-  color: #596651;
+  color: #665a51;
   line-height: 1.6;
   margin: 12px 0 0;
   min-height: 18px;
@@ -201,7 +201,7 @@
   justify-content: center;
   gap: 22px;
   font-size: 11px;
-  color: #54624c;
+  color: #62554c;
   padding: 10px 0 0;
   flex: none;
   flex-wrap: wrap;
