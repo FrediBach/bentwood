@@ -108,7 +108,8 @@ function intersections(
 }
 
 /** Clip each straight toolpath segment against the actual exported contour,
- * including analytic ellipses. Concave outlines may yield several spans. */
+ * including analytic ellipses. Concave outlines may yield several spans.
+ * Also accepts non-monotonic paths; only slicePatternSpan requires monotonic Y. */
 export function clipPatternColumn(
   points: Point[],
   outline: Point[],
@@ -132,7 +133,7 @@ export function clipPatternColumn(
       }
       const start = at(lo),
         end = at(hi)
-      if (end.y - start.y < EPS) continue
+      if (Math.hypot(end.x - start.x, end.y - start.y) < EPS) continue
       const previous = current?.at(-1)
       if (current && previous && Math.hypot(previous.x - start.x, previous.y - start.y) < EPS)
         current.push(end)

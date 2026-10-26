@@ -67,7 +67,7 @@ const hingePatterns: { value: Design['pattern']; label: string; description: str
   },
   {
     value: 'wave',
-    label: 'Wave',
+    label: 'Wavy slits',
     description:
       'Undulating cuts for a flowing texture. Test a swatch to find the right flexibility.',
   },
@@ -77,9 +77,33 @@ const hingePatterns: { value: Design['pattern']; label: string; description: str
     description:
       'Angular cuts for a geometric texture. Test a swatch to find the right flexibility.',
   },
+  {
+    value: 'small-wave',
+    label: 'Small waves',
+    description:
+      'Staggered openings form the interlocking wave texture from the reference. Their long axis runs across the sheet width, perpendicular to the bend.',
+  },
 ]
 
 function PatternDrawing({ pattern }: { pattern: Design['pattern'] }) {
+  if (pattern === 'small-wave')
+    return (
+      <svg viewBox="0 0 64 32" aria-hidden="true" focusable="false">
+        {Array.from({ length: 9 }, (_, row) =>
+          Array.from({ length: 3 }, (_, column) => {
+            const x = 16 + (column - 1) * 29.33 + (row % 2 ? 14.67 : 0)
+            const y = 2 + row * 3.35
+            return (
+              <path
+                key={`${row}-${column}`}
+                d={`M${x - 11} ${y} l11 -0.84 l11 0.84 l-11 0.84 Z`}
+                strokeWidth={0.7}
+              />
+            )
+          }),
+        )}
+      </svg>
+    )
   const columns = pattern === 'graded' ? [8, 16, 26, 39, 55] : [8, 20, 32, 44, 56]
   return (
     <svg viewBox="0 0 64 32" aria-hidden="true" focusable="false">
@@ -935,12 +959,15 @@ export default function App() {
             <section className="hinge-section">
               <div className="section-label">
                 <span>LIVING HINGE</span>
-                <span className="mini-badge">4 patterns</span>
+                <span className="mini-badge">{hingePatterns.length} patterns</span>
               </div>
               <fieldset className="pattern-selector" aria-describedby="pattern-description">
                 <legend className="sr-only">Hinge pattern</legend>
                 {hingePatterns.map((pattern) => (
-                  <label key={pattern.value} className="pattern-option">
+                  <label
+                    key={pattern.value}
+                    className={`pattern-option${pattern.value === 'small-wave' ? ' pattern-option-wide' : ''}`}
+                  >
                     <input
                       className="pattern-radio"
                       type="radio"
@@ -959,6 +986,21 @@ export default function App() {
               <p className="control-hint" id="pattern-description">
                 {hingePatterns.find((pattern) => pattern.value === design.pattern)?.description}
               </p>
+              {design.pattern === 'small-wave' && (
+                <div className="reference-pattern-settings">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => patch({ spacing: 2.4, bridge: 5.25, cutLength: 15.75 })}
+                  >
+                    Reference proportions
+                  </Button>
+                  <p className="control-hint">
+                    Spacing sets row pitch; cut length sets opening length; bridge sets the gap
+                    between ends.
+                  </p>
+                </div>
+              )}
               <div className="field-row">
                 <NumberField
                   label="Cut spacing"
@@ -966,7 +1008,7 @@ export default function App() {
                   onChange={(v) => patch({ spacing: v })}
                   min={1}
                   max={12}
-                  step={0.5}
+                  step={design.pattern === 'small-wave' ? 0.1 : 0.5}
                 />
                 <NumberField
                   label="Bridge"
@@ -974,7 +1016,7 @@ export default function App() {
                   onChange={(v) => patch({ bridge: v })}
                   min={0.5}
                   max={10}
-                  step={0.5}
+                  step={design.pattern === 'small-wave' ? 0.25 : 0.5}
                 />
               </div>
               <div className="field-row">
@@ -984,6 +1026,7 @@ export default function App() {
                   onChange={(v) => patch({ cutLength: v })}
                   min={5}
                   max={80}
+                  step={design.pattern === 'small-wave' ? 0.25 : 1}
                 />
               </div>
               <div className="swatch-download">
@@ -1192,9 +1235,10 @@ export default function App() {
                 <div>
                   <h3>Give it some give.</h3>
                   <p>
-                    Choose Classic, Graded, Wave, or Zigzag and set your plywood thickness. Cuts
-                    reach the panel edges in curved sections, with staggered bridges between them.
-                    Orbit the preview and unfold it to see the transformation.
+                    Choose a hinge pattern and set your plywood thickness. Classic, Graded, Wavy
+                    slits, and Zigzag use interrupted cut lines; Small waves removes slender
+                    openings to form an interlocking texture. Orbit the preview and unfold it to see
+                    the transformation.
                   </p>
                 </div>
               </li>

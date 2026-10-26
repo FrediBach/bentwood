@@ -144,10 +144,14 @@ test('mobile panels and accessible export dialog', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Bend your idea.' })).toBeVisible()
   await page.getByRole('button', { name: 'Material & cuts', exact: true }).click()
   await expect(page.getByRole('spinbutton', { name: 'Thickness' })).toBeVisible()
-  const wave = page.getByRole('radio', { name: 'Wave', exact: true })
+  const wave = page.getByRole('radio', { name: 'Wavy slits', exact: true })
   await wave.check()
   await expect(wave).toBeChecked()
   await expect(page.locator('#pattern-description')).toContainText('Undulating cuts')
+  const smallWaves = page.getByRole('radio', { name: 'Small waves', exact: true })
+  await smallWaves.check()
+  await page.getByRole('button', { name: 'Reference proportions', exact: true }).click()
+  await expect(page.locator('#pattern-description')).toContainText('perpendicular to the bend')
   await expect(
     page.getByRole('button', { name: 'Download test swatches SVG', exact: true }),
   ).toBeVisible()
@@ -161,7 +165,7 @@ test('mobile panels and accessible export dialog', async ({ page }) => {
       nodes: v.nodes.map((n) => n.target),
     })),
   ).toEqual([])
-  await wave.scrollIntoViewIfNeeded()
+  await smallWaves.scrollIntoViewIfNeeded()
   await page.screenshot({ path: 'test-results/patterns-mobile.png' })
   await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
   await expect(page.getByRole('dialog')).toBeVisible()
@@ -259,7 +263,7 @@ test('hinge patterns update previews, exports and saved projects with test swatc
   await page.keyboard.press('ArrowRight')
   await expect(pattern('Graded')).toBeChecked()
   await expect(page.locator('#pattern-description')).toContainText('single radius')
-  await pattern('Wave').check()
+  await pattern('Wavy slits').check()
   await expect(page.locator('.plywood-preview canvas')).toBeVisible()
   await expect(page.getByText('Dense pattern: cuts shown as lines')).toHaveCount(0)
   await page.screenshot({ path: 'test-results/wave-bent-preview.png' })
@@ -283,7 +287,7 @@ test('hinge patterns update previews, exports and saved projects with test swatc
   await expect(page.locator('.plywood-preview canvas')).toBeVisible()
   await expect(page.getByText('Dense pattern: cuts shown as lines')).toHaveCount(0)
   await page.screenshot({ path: 'test-results/zigzag-bent-preview.png' })
-  await pattern('Wave').check()
+  await pattern('Wavy slits').check()
   await page.getByRole('button', { name: 'Cut plan', exact: true }).click()
   await expect(previewCut).toHaveAttribute('d', wavePath!)
 
@@ -294,7 +298,7 @@ test('hinge patterns update previews, exports and saved projects with test swatc
   expect(project.pattern).toBe('wave')
   expect(project.version).toBe(3)
   await page.reload()
-  await expect(pattern('Wave')).toBeChecked()
+  await expect(pattern('Wavy slits')).toBeChecked()
   await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
   const exported = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Download SVG', exact: true }).click()
@@ -337,6 +341,69 @@ test('hinge patterns update previews, exports and saved projects with test swatc
   })
   await expect(page.getByLabel('Project name')).toHaveValue('Version two study')
   await expect(pattern('Classic')).toBeChecked()
+  expect(errors).toEqual([])
+})
+
+test('small waves keeps closed openings in the preview, exports and saved projects', async ({
+  page,
+}) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('radio', { name: 'Small waves', exact: true }).check()
+  await page.getByRole('button', { name: 'Reference proportions', exact: true }).click()
+  await expect(page.getByRole('spinbutton', { name: 'Cut spacing mm', exact: true })).toHaveValue(
+    '2.4',
+  )
+  await expect(page.getByRole('spinbutton', { name: 'Bridge mm', exact: true })).toHaveValue('5.25')
+  await expect(page.getByRole('spinbutton', { name: 'Cut length mm', exact: true })).toHaveValue(
+    '15.75',
+  )
+  await expect(page.locator('#pattern-description')).toContainText('interlocking wave texture')
+  await expect(page.locator('.plywood-preview canvas')).toBeVisible()
+  await page.screenshot({ path: 'test-results/small-waves-bent-preview.png' })
+  await page.getByLabel('Unfold').fill('0')
+  await page.getByLabel('Camera view').selectOption('front')
+  await page.screenshot({ path: 'test-results/small-waves-flat-preview.png' })
+  await page.getByRole('button', { name: 'Cut plan', exact: true }).click()
+  const closedCuts = page.locator('.cut-plan-view [data-hinge-cut][d$="Z"]')
+  expect(await closedCuts.count()).toBeGreaterThan(10)
+  const closedPath = await closedCuts.first().getAttribute('d')
+  await page.screenshot({ path: 'test-results/small-waves-cut-plan.png' })
+
+  const saved = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save project file', exact: true }).click()
+  const projectFile = await saved
+  const project = JSON.parse(await readFile((await projectFile.path())!, 'utf8'))
+  expect(project.pattern).toBe('small-wave')
+  expect(project.spacing).toBe(2.4)
+  expect(project.bridge).toBe(5.25)
+  expect(project.cutLength).toBe(15.75)
+  expect(project.version).toBe(3)
+  await page.reload()
+  await expect(page.getByRole('radio', { name: 'Small waves', exact: true })).toBeChecked()
+
+  await page.getByRole('button', { name: 'Export cut plan', exact: true }).click()
+  const exported = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download SVG', exact: true }).click()
+  const svgFile = await exported
+  const svg = await readFile((await svgFile.path())!, 'utf8')
+  expect(svg).toContain(`d="${closedPath}"`)
+  await page.getByRole('button', { name: 'Close dialog', exact: true }).click()
+  const swatches = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download test swatches SVG', exact: true }).click()
+  const swatchFile = await swatches
+  expect(swatchFile.suggestedFilename()).toContain('-small-wave-test-swatches.svg')
+  const swatchSVG = await readFile((await swatchFile.path())!, 'utf8')
+  const sampleContours = await page.evaluate((contents) => {
+    const document = new DOMParser().parseFromString(contents, 'image/svg+xml')
+    return [...document.querySelectorAll('[id^="swatch-"]')].map(
+      (sample) => sample.querySelectorAll('path[d$="Z"]').length,
+    )
+  }, swatchSVG)
+  expect(sampleContours).toHaveLength(9)
+  expect(sampleContours.every((count) => count > 0)).toBe(true)
+  expect(swatchSVG).toContain('Small waves')
   expect(errors).toEqual([])
 })
 

@@ -4,7 +4,7 @@ import { exportTestSwatchesSVG, getTestSwatchSheetSize } from './test-swatches'
 import type { Design, Point } from './types'
 
 function pathPoints(path: string): Point[] {
-  const tokens = path.match(/[MLV]|-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/gi)!
+  const tokens = path.match(/[MLVZ]|-?\d+(?:\.\d+)?(?:e[+-]?\d+)?/gi)!
   const result: Point[] = []
   let index = 0
   while (index < tokens.length) {
@@ -13,6 +13,8 @@ function pathPoints(path: string): Point[] {
       result.push({ x: Number(tokens[index++]), y: Number(tokens[index++]) })
     } else if (command === 'V') {
       result.push({ x: result.at(-1)!.x, y: Number(tokens[index++]) })
+    } else if (command === 'Z') {
+      result.push({ ...result[0] })
     } else throw new Error(`Unexpected toolpath command: ${command}`)
   }
   return result
@@ -25,7 +27,7 @@ const samples = (svg: string) => [
 ]
 
 describe('test swatch sheet', () => {
-  it.each(['classic', 'graded', 'wave', 'zigzag'] as const)(
+  it.each(['classic', 'graded', 'wave', 'zigzag', 'small-wave'] as const)(
     'exports nine separate %s samples with uncut grip tabs and actual settings',
     (pattern) => {
       const design: Design = { ...defaultDesign, name: 'Study <one>', pattern }
@@ -80,8 +82,13 @@ describe('test swatch sheet', () => {
           expect(point.y).toBeGreaterThanOrEqual(box.y - 1e-6)
           expect(point.y).toBeLessThanOrEqual(box.y + box.height + 1e-6)
         }
-        expect(points.some((point) => Math.abs(point.y - box.y) < 1e-6)).toBe(true)
-        expect(points.some((point) => Math.abs(point.y - box.y - box.height) < 1e-6)).toBe(true)
+        if (pattern === 'small-wave') {
+          expect(sample[4]).toMatch(/d="[^"]+ Z"/)
+          expect(svg).toContain('Small waves')
+        } else {
+          expect(points.some((point) => Math.abs(point.y - box.y) < 1e-6)).toBe(true)
+          expect(points.some((point) => Math.abs(point.y - box.y - box.height) < 1e-6)).toBe(true)
+        }
         const label = svg.match(new RegExp(`<g id="label-${i + 1}">([\\s\\S]*?)<\\/g>`))![1]
         expect(label).toContain(`S ${sample[2]} mm`)
         expect(label).toContain(`B ${sample[3]} mm`)

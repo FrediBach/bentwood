@@ -52,7 +52,12 @@ export function exportTestSwatchesSVG(design: Design): string {
   const hinges: string[] = []
   const outlines: string[] = []
   const labels: string[] = []
-  const patternName = design.pattern[0].toUpperCase() + design.pattern.slice(1)
+  const patternName =
+    design.pattern === 'small-wave'
+      ? 'Small waves'
+      : design.pattern === 'wave'
+        ? 'Wavy slits'
+        : design.pattern[0].toUpperCase() + design.pattern.slice(1)
   const materialName = design.material[0].toUpperCase() + design.material.slice(1)
 
   for (let row = 0; row < 3; row++) {

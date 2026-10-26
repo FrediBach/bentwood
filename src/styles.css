@@ -961,6 +961,9 @@ svg {
   cursor: pointer;
   min-width: 0;
 }
+.pattern-option-wide {
+  grid-column: 1 / -1;
+}
 .pattern-radio {
   position: absolute;
   inset: 0;
@@ -988,6 +991,7 @@ svg {
   stroke: currentColor;
   stroke-width: 1.35;
   fill: none;
+  flex-shrink: 0;
 }
 .pattern-option input:checked + span {
   border-color: #816449;
@@ -1004,6 +1008,12 @@ svg {
 }
 .swatch-download {
   margin-top: 15px;
+}
+.reference-pattern-settings {
+  margin-bottom: 14px;
+}
+.reference-pattern-settings .control-hint {
+  margin: 7px 0 0;
 }
 .swatch-download > button {
   width: 100%;

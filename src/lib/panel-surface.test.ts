@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { ShapeUtils, Vector2 } from 'three'
 import { createPanelSurface, type PanelSurface } from './panel-surface'
-import type { Point } from './types'
+import { cutPathData, cutPathLength, getCutPoints } from './cut-path'
+import type { CutLine, Point } from './types'
 
 const rectangle: Point[] = [
   { x: 0, y: 0 },
@@ -240,6 +241,151 @@ describe('plywood surface with open-edge kerfs', () => {
     expect(surface.polygons).toHaveLength(1)
     expect(surface.polygons[0].holes).toHaveLength(1)
     expect(surfaceArea(surface)).toBeCloseTo(100 - pathLength * 0.2, 9)
+    expect(triangulatedArea(surface)).toBeCloseTo(surfaceArea(surface), 9)
+  })
+})
+
+describe('removed cutout interiors', () => {
+  const square = [
+    { x: 3, y: 3 },
+    { x: 7, y: 3 },
+    { x: 7, y: 7 },
+    { x: 3, y: 7 },
+  ]
+
+  it.each([false, true])(
+    'removes closed scrap and joins the closing seam, reversed=%s',
+    (reversed) => {
+      const points = reversed ? [...square].reverse() : square
+      const cut: CutLine = { x: 5, y1: 3, y2: 7, points, closed: true }
+      const surface = createPanelSurface(rectangle, [cut], 1)
+      expect(surface.polygons).toHaveLength(1)
+      expect(surface.polygons[0].holes).toHaveLength(1)
+      // The removed square grows by the edge strips and four rounded beam-radius
+      // corners. At this radius the 0.01-mm tolerance uses four segments per arc.
+      const roundedCornerArea = 8 * 0.5 ** 2 * Math.sin(Math.PI / 8)
+      const expected = 100 - 16 - 16 * 0.5 - roundedCornerArea
+      expect(surfaceArea(surface)).toBeCloseTo(expected, 10)
+      expect(triangulatedArea(surface)).toBeCloseTo(expected, 10)
+      expect(surface.boundaries.filter((boundary) => boundary.kind === 'kerf')).toHaveLength(20)
+    },
+  )
+
+  it('shares exactly one closing edge between SVG, path length, and point consumers', () => {
+    const cut: CutLine = { x: 5, y1: 3, y2: 7, points: square, closed: true }
+    const repeated = { ...cut, points: [...square, square[0]] }
+    expect(getCutPoints(cut)).toEqual([...square, square[0]])
+    expect(getCutPoints(repeated)).toHaveLength(5)
+    expect(cutPathLength(cut)).toBe(16)
+    expect(cutPathLength(repeated)).toBe(16)
+    expect(cutPathData(cut)).toBe('M3 3 L7 3 L7 7 L3 7 Z')
+    expect(cutPathData(repeated)).toBe(cutPathData(cut))
+    expect(surfaceArea(createPanelSurface(rectangle, [repeated], 1))).toBeCloseTo(
+      surfaceArea(createPanelSurface(rectangle, [cut], 1)),
+      10,
+    )
+  })
+
+  it('removes filled cutouts even with zero kerf or without a stroke path', () => {
+    const cut: CutLine = { x: 5, y1: 3, y2: 7, points: square, closed: true }
+    for (const surface of [
+      createPanelSurface(rectangle, [cut], 0),
+      createPanelSurface(rectangle, [], 0.15, [square]),
+    ]) {
+      expect(surface.polygons).toHaveLength(1)
+      expect(surface.polygons[0].holes).toHaveLength(1)
+      expect(surfaceArea(surface)).toBe(84)
+      expect(triangulatedArea(surface)).toBe(84)
+    }
+  })
+
+  it('removes edge scrap using its filled region without inventing an outer-edge toolpath', () => {
+    const region = [
+      { x: 3, y: 0 },
+      { x: 3, y: 4 },
+      { x: 7, y: 4 },
+      { x: 7, y: 0 },
+    ]
+    const surface = createPanelSurface(rectangle, [{ x: 5, y1: 0, y2: 4, points: region }], 0.4, [
+      region,
+    ])
+    expect(surface.polygons).toHaveLength(1)
+    expect(surface.polygons[0].holes).toHaveLength(0)
+    expect(edgeSpans(surface, 0, 5)).toBe(false)
+    const roundedCorners = 3 * 0.2 ** 2 * Math.sin(Math.PI / 6)
+    expect(surfaceArea(surface)).toBeCloseTo(100 - 16 - 2 * 4 * 0.2 - 4 * 0.2 - roundedCorners, 10)
+    expect(triangulatedArea(surface)).toBeCloseTo(surfaceArea(surface), 10)
+  })
+
+  it('triangulates a curved closed opening as a hole, never as retained floating scrap', () => {
+    const points = Array.from({ length: 96 }, (_, i) => {
+      const angle = (i / 96) * Math.PI * 2
+      return { x: 5 + 3 * Math.cos(angle), y: 5 + Math.sin(angle) + 0.3 * Math.sin(2 * angle) }
+    })
+    const surface = createPanelSurface(
+      rectangle,
+      [{ x: 5, y1: 3, y2: 7, points, closed: true }],
+      0.2,
+    )
+    expect(surface.polygons).toHaveLength(1)
+    expect(surface.polygons[0].holes).toHaveLength(1)
+    expect(surfaceArea(surface)).toBeLessThan(100 - ringArea(points))
+    expect(triangulatedArea(surface)).toBeCloseTo(surfaceArea(surface), 9)
+  })
+
+  it('rounds acute aperture tips to the laser radius without consuming the web between cells', () => {
+    const outline = [
+      { x: 0, y: 0 },
+      { x: 20, y: 0 },
+      { x: 20, y: 30 },
+      { x: 0, y: 30 },
+    ]
+    const cells = [8, 20].map((y): CutLine => ({
+      x: 10,
+      y1: y - 5,
+      y2: y + 5,
+      closed: true,
+      points: [
+        { x: 10, y: y - 5 },
+        { x: 12, y },
+        { x: 10, y: y + 5 },
+        { x: 8, y },
+      ],
+    }))
+    const surface = createPanelSurface(outline, cells, 0.8)
+    expect(surface.polygons).toHaveLength(1)
+    const holes = surface.polygons[0].holes.sort(
+      (a, b) => Math.min(...a.map((p) => p.y)) - Math.min(...b.map((p) => p.y)),
+    )
+    expect(holes).toHaveLength(2)
+    const clearance = Math.min(...holes[1].map((p) => p.y)) - Math.max(...holes[0].map((p) => p.y))
+    expect(clearance).toBeGreaterThanOrEqual(2 - 0.8 - 1e-8)
+    expect(triangulatedArea(surface)).toBeCloseTo(surfaceArea(surface), 9)
+  })
+
+  it('uses the beam radius at clipped aperture endpoints on the panel boundary', () => {
+    const points = [
+      { x: 3, y: 0 },
+      { x: 5, y: 6 },
+      { x: 7, y: 0 },
+    ]
+    const surface = createPanelSurface(rectangle, [{ x: 5, y1: 0, y2: 6, points }], 0.4, [points])
+    expect(surface.polygons).toHaveLength(1)
+    // This point is within the radius of the starting beam position, but behind
+    // the tilted butt cap. It must not remain as a sliver of apparent material.
+    const probe = { x: 2.85, y: 0.02 }
+    const contour = surface.polygons[0].contour
+    let inside = false
+    for (let i = 0, j = contour.length - 1; i < contour.length; j = i++) {
+      const a = contour[i],
+        b = contour[j]
+      if (
+        a.y > probe.y !== b.y > probe.y &&
+        probe.x < ((b.x - a.x) * (probe.y - a.y)) / (b.y - a.y) + a.x
+      )
+        inside = !inside
+    }
+    expect(inside).toBe(false)
     expect(triangulatedArea(surface)).toBeCloseTo(surfaceArea(surface), 9)
   })
 })

@@ -31,19 +31,24 @@ The browser tests and OG image generator use Playwright. If its Chromium browser
 1. Choose a starting form, or add straight and curved segments. Select a segment in the diagram or list to edit its length, radius, bend angle, and direction. The segments join tangentially.
 2. Choose a rectangle, square, ellipse, circle, triangle, or custom outline. The sheet’s unrolled length comes from the bend path. Panel width runs across the sheet; squares and circles link width to length.
 3. For a custom outline, drag vertices, double-click an edge to insert a vertex, or edit the selected point’s millimetre coordinates. The outline must remain a simple polygon.
-4. Choose a hinge pattern and set plywood thickness, nominal laser kerf, cut spacing, bridge size, and cut length. Hinge cuts are generated in curved regions and reach the panel outline at both ends, with staggered internal bridges between cuts.
+4. Choose a hinge pattern and set plywood thickness, nominal laser kerf, cut spacing, bridge size, and cut length. Hinge cuts are generated in curved regions. Slit patterns retain staggered internal bridges; Small waves removes staggered slender openings to form an interlocking texture.
 5. Inspect the 3D form, unfold it with the slider, and review the flat outline and cut plan. Download a sheet of test swatches to try the selected pattern in your plywood. Export the panel as SVG or DXF when ready.
 
 ### Hinge patterns
 
-| Pattern     | Geometry and use                                                                                                                                                                                                                              |
-| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Classic** | The original evenly spaced, straight staggered cuts.                                                                                                                                                                                          |
-| **Graded**  | Straight cuts spaced according to each curved segment’s radius. The smallest radius uses the chosen cut spacing; gentler curves use proportionally wider spacing, capped at twice that value. Designs with only one radius look like Classic. |
-| **Wave**    | Smoothly undulating cut paths for a flowing texture. Wavelength follows cut length plus bridge size; amplitude is derived from spacing to keep adjacent paths apart.                                                                          |
-| **Zigzag**  | Angular cut paths for a geometric texture, using the same staggered bridge layout. Shape dimensions follow the existing cut settings.                                                                                                         |
+| Pattern         | Geometry and use                                                                                                                                                                                                                              |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Classic**     | The original evenly spaced, straight staggered cuts.                                                                                                                                                                                          |
+| **Graded**      | Straight cuts spaced according to each curved segment’s radius. The smallest radius uses the chosen cut spacing; gentler curves use proportionally wider spacing, capped at twice that value. Designs with only one radius look like Classic. |
+| **Wavy slits**  | Smoothly undulating cut paths for a flowing texture. Wavelength follows cut length plus bridge size; amplitude is derived from spacing to keep adjacent paths apart.                                                                          |
+| **Zigzag**      | Angular cut paths for a geometric texture, using the same staggered bridge layout. Shape dimensions follow the existing cut settings.                                                                                                         |
+| **Small waves** | Staggered slender diamond openings. The wood between the openings forms an interlocking wave texture, matching the reference sample.                                                                                                          |
 
-Wave and Zigzag are generated as polylines shared by the flat preview, 3D slots, and exports. Wave approximation error is bounded by the smaller of 0.01 mm and one quarter of the nominal laser kerf. Every pattern retains material bridges; the preview shows the requested bend but does not predict the force, strength, or minimum radius for a pattern. Test the actual plywood, grain direction, and laser settings before committing to a full panel.
+**Small waves** follows the staggered, slender diamond openings in Trotec’s [Kerf 2: Small waves reference](https://www.troteclaser.com/en-us/helpcenter/materials/application-techniques/bending-technique). The remaining wood forms the interlocking wave texture. The openings are oriented across the panel width to suit Bentwood’s bend direction. Closed contours remove their enclosed scrap in the 3D preview; exports include the cut contours, not filled shapes.
+
+For Small waves, **cut length** sets each diamond’s long axis, **cut spacing** sets the row pitch along the bend, and **bridge** sets the end-to-end gap within a row. The opening’s short axis is half the row pitch; adjacent rows are offset by half the combined cut length and bridge. Selecting the pattern retains the current settings. **Reference proportions** applies 2.4 mm spacing, 5.25 mm bridge, and 15.75 mm cut length to match the source’s proportions.
+
+Wavy slits and Zigzag are generated as polylines shared by the flat preview, 3D slots, and exports. Wavy-slit approximation error is bounded by the smaller of 0.01 mm and one quarter of the nominal laser kerf. Every pattern retains connecting material; the preview shows the requested bend but does not predict the force, strength, or minimum radius for a pattern. Test the actual plywood, grain direction, and laser settings before committing to a full panel.
 
 **Test swatches** downloads a 1:1 SVG with nine labeled samples of the selected pattern, varying spacing and bridge size by up to 20% around the current values. The settings panel shows the total sheet size before download. Each sample includes grip tabs; Graded samples include two radii so the spacing difference is visible. Black labels are on the separate `engraving-labels` group and must be assigned an engraving operation in the laser software. Red outlines and blue hinge paths are cuts. Keep the physical dimensions unchanged when importing.
 
@@ -54,7 +59,7 @@ The desktop workspace stays within the viewport, with individual controls scroll
 - Drag the 3D preview to orbit, scroll to zoom, and use the camera menu for perspective, top, or front views. Focus the preview and use arrow keys to orbit, `+` / `−` to zoom, and `Home` to reset.
 - Focus an outline vertex and use arrow keys to move it; `Delete` / `Backspace` removes it when at least three vertices remain. Numeric coordinate fields offer precise editing.
 - `⌘/Ctrl Z` undoes, `⌘/Ctrl Shift Z` redoes, and `⌘/Ctrl S` downloads a project file.
-- The current design is saved automatically in browser `localStorage`. Version 3 stores the selected hinge pattern. Version 1 and 2 projects migrate automatically to Classic; version 1’s former edge margin is replaced with cuts that reach the outline. Use **Save project file** to keep a portable `.bentwood.json` backup and **Open project** to restore one.
+- The current design is saved automatically in browser `localStorage`. Version 3 stores the selected hinge pattern. Existing `wave` projects retain their geometry under the clearer name **Wavy slits**; **Small waves** uses the separate `small-wave` pattern. Version 1 and 2 projects migrate automatically to Classic; version 1’s former edge margin is replaced with cuts that reach the outline. Use **Save project file** to keep a portable `.bentwood.json` backup and **Open project** to restore one.
 
 There is no backend, account, upload service, or cloud synchronization. Browser storage belongs to the current browser and site address; clearing site data removes the saved design. Download a project before moving between the local app and a hosted domain. If browser storage is unavailable, the app indicates that a download is needed to save.
 
@@ -69,17 +74,19 @@ SVG and DXF use **millimetres at 1:1 scale**. Import without resizing and verify
 
 Circular and elliptical exteriors are exported as true curves: SVG arc commands, DXF `CIRCLE` / `ELLIPSE` entities. Polygon exteriors use straight edges. DXF declares millimetre insertion units; SVG includes physical dimensions and a matching `viewBox`.
 
-Hinge cuts reach the outline at both ends of each cut column. Internal bridges remain staggered; an end cut can extend by up to one bridge width beyond the nominal cut length to meet the edge. Cut length and bridge size describe distances across the panel width; the actual laser travel along Wave and Zigzag paths is longer. Sections too narrow to accommodate staggered bridges remain uncut and are reported in the design warnings.
+For slit patterns, hinge cuts reach the outline at both ends of each cut column. Internal bridges remain staggered; an end cut can extend by up to one bridge width beyond the nominal cut length to meet the edge. Cut length and bridge size describe distances across the panel width; the actual laser travel along Wavy slits and Zigzag paths is longer. Sections too narrow to accommodate staggered bridges remain uncut and are reported in the design warnings.
+
+Small waves exports closed contours for interior openings and open contour pieces where an opening reaches the panel boundary. Boundary pieces do not add duplicate cuts along the outer contour.
 
 All exported paths are **laser centre lines**. Nominal kerf is used in the visual preview and design checks; **no kerf compensation is applied to the exported toolpaths**. Set compensation, power, speed, passes, and cutting order in the laser software. Bentwood does not generate machine-specific G-code or estimate cutting time.
 
-Exports are blocked when the nominal kerf is too wide to preserve a bridge or the estimated minimum material between neighboring cuts. Increase spacing or bridge size before exporting. These clearance checks include the slope and amplitude of Wave and Zigzag paths; passing them does not establish a material’s strength or bendability.
+Exports are blocked when the nominal kerf is too wide to preserve a bridge or the estimated minimum material between neighboring cuts. Increase spacing or bridge size before exporting. These clearance checks include the slope and amplitude of Wavy slits and Zigzag paths; passing them does not establish a material’s strength or bendability.
 
 ## Geometry and physical limits
 
 - The bend path is a sequence of straight lines and circular arcs, measured at the sheet’s neutral axis. Unrolled length is the sum of straight lengths and arc lengths (`radius × angle in radians`).
 - The model represents a continuous sheet bent in one direction along that path. It supports developable forms, including concave panel outlines, but not compound curvature, twisting, branching, or multiple joined panels.
-- Custom outlines are simple polygons with up to 128 vertices. Interior holes, SVG import, and freehand or Bézier outline curves are not supported. Self-intersecting and degenerate polygons are rejected.
+- Custom outlines are simple polygons with up to 128 vertices. User-defined interior holes, SVG import, and freehand or Bézier outline curves are not supported; Small waves generates its own hinge openings. Self-intersecting and degenerate polygons are rejected.
 - The 3D surface is tessellated. Circle and ellipse previews use 128 outline vertices; their exported exterior curves remain analytic. Hinge endpoints intersect the actual polygon edges or the analytic circle/ellipse, so exported cuts reach the exported contour.
 - The preview preserves neutral-axis length while unfolding. It shows thickness, grain appearance, exposed plywood layers, and laser slots. Slots that meet the edge are subtracted from the contour, including its thickness walls. Above 2,500 cuts or 20,000 polyline segments, it displays every cut as a surface centre line and labels the simplified view; the export still includes the full pattern.
 - Material selection changes appearance. It is not a calibrated material model. Strength, glue layers, grain direction, hinge torsion, springback, heat effects, and assembly forces are not simulated.
@@ -94,6 +101,7 @@ Exports are blocked when the nominal kerf is too wide to preserve a bridge or th
 | `src/lib/types.ts`                  | Versioned project schema and geometry types                                                           |
 | `src/lib/geometry.ts`               | Arc-length sampling, outlines, pattern generation, clipped hinge cuts, validation, SVG/DXF generation |
 | `src/lib/cut-path.ts`               | Shared cut-path points and drawing helpers                                                            |
+| `src/lib/small-wave.ts`             | Staggered diamond openings, clipped cut contours, and material-clearance checks                       |
 | `src/lib/test-swatches.ts`          | Labeled SVG test sheets with spacing and bridge variations                                            |
 | `src/lib/geometry.test.ts`          | Geometry and export regression tests                                                                  |
 | `src/lib/panel-surface.ts`          | Kerf subtraction and open-edge boundaries for the 3D mesh                                             |

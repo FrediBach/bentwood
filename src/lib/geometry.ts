@@ -1,5 +1,6 @@
 import type { CutLine, CutPlan, Design, PathSample, Point, Segment } from './types'
 import { cutPathData, cutPathLength, getCutPoints } from './cut-path'
+import { smallWaveCuts } from './small-wave'
 import {
   clipPatternColumn,
   MAX_PATTERN_SEGMENTS,
@@ -286,6 +287,7 @@ export function createCutPlan(design: Design): CutPlan {
   const outline = getOutline(design)
   const warnings: string[] = []
   const cuts: CutLine[] = []
+  let cutouts: Point[][] | undefined
   const validOutline = isSimplePolygon(outline)
   if (!validOutline)
     warnings.push('The outline crosses itself or has no area. Adjust its points before exporting.')
@@ -301,9 +303,12 @@ export function createCutPlan(design: Design): CutPlan {
     warnings.push('The bend path crosses itself. The assembled panel may collide.')
   const shaped = design.pattern === 'wave' || design.pattern === 'zigzag'
   const shape = patternShape(design)
-  const minimumSpacing = shaped
-    ? (design.spacing - shape.amplitude) / Math.hypot(1, shape.slope)
-    : design.spacing
+  const minimumSpacing =
+    design.pattern === 'small-wave'
+      ? design.spacing / 2
+      : shaped
+        ? (design.spacing - shape.amplitude) / Math.hypot(1, shape.slope)
+        : design.spacing
   if (minimumSpacing <= design.kerf || design.bridge <= design.kerf)
     warnings.push(
       'The laser kerf is as wide as a ligament or bridge. Increase spacing or bridge size before exporting.',
@@ -325,7 +330,9 @@ export function createCutPlan(design: Design): CutPlan {
         .filter((s) => s.type === 'arc')
         .reduce((sum, s) => sum + segmentLength(s) / spacing, 0) *
       ((width / shape.period) * shape.samples + 2 * (width / period + 2))
-    : estimatedCuts
+    : design.pattern === 'small-wave'
+      ? 4 * estimatedCuts
+      : estimatedCuts
   if (estimatedSegments > MAX_PATTERN_SEGMENTS)
     warnings.push(
       'This pattern exceeds 250,000 toolpath segments. Increase spacing or cut length before exporting.',
@@ -334,7 +341,26 @@ export function createCutPlan(design: Design): CutPlan {
     ...design.segments.filter((s) => s.type === 'arc').map((s) => s.radius),
   )
   let skippedNarrowSpans = false
-  if (validOutline && estimatedCuts <= 50000 && estimatedSegments <= MAX_PATTERN_SEGMENTS) {
+  if (
+    validOutline &&
+    estimatedCuts <= 50000 &&
+    estimatedSegments <= MAX_PATTERN_SEGMENTS &&
+    design.pattern === 'small-wave'
+  ) {
+    const result = smallWaveCuts(design, outline, length, width)
+    cuts.push(...result.cuts)
+    cutouts = result.cutouts
+    if (result.limit)
+      warnings.push(
+        result.limit === 'cuts'
+          ? 'This pattern exceeds 50,000 cuts. Increase spacing or cut length before exporting.'
+          : 'This pattern exceeds 250,000 toolpath segments. Increase spacing or cut length before exporting.',
+      )
+    if (result.skipped)
+      warnings.push(
+        'Some wave openings cross narrow outline sections. Those openings remain uncut to keep the sheet connected.',
+      )
+  } else if (validOutline && estimatedCuts <= 50000 && estimatedSegments <= MAX_PATTERN_SEGMENTS) {
     let start = 0
     let previousColumn = -Infinity
     let bridgePhase = 0
@@ -416,6 +442,7 @@ export function createCutPlan(design: Design): CutPlan {
     width,
     outline,
     cuts,
+    ...(cutouts && { cutouts }),
     cutLength: perimeter + cuts.reduce((sum, cut) => sum + cutPathLength(cut), 0),
     warnings,
   }
@@ -672,7 +699,7 @@ export function validateDesign(input: unknown): Design | null {
     return null
   if (
     value.version === 3 &&
-    !['classic', 'graded', 'wave', 'zigzag'].includes(value.pattern as string)
+    !['classic', 'graded', 'wave', 'zigzag', 'small-wave'].includes(value.pattern as string)
   )
     return null
   const segments: Segment[] = []

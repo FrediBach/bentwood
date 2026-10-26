@@ -44,6 +44,11 @@ function canRenderDetailedCuts(plan: CutPlan) {
   return true
 }
 
+function canRenderCutoutVoids(plan: CutPlan) {
+  if (!plan.cutouts || plan.cutouts.length > 2500) return false
+  return plan.cutouts.reduce((count, points) => count + points.length, 0) <= 20000
+}
+
 function woodTexture(material: Design['material']) {
   const cached = grainCanvases.get(material)
   if (cached) {
@@ -173,7 +178,12 @@ function createPanel(design: Design, plan: CutPlan, bend: number, showCuts: bool
   const cached = panelSurfaces.get(plan)
   if (detailedCuts && cached?.kerf === design.kerf) surface = cached.surface
   else {
-    surface = createPanelSurface(plan.outline, detailedCuts ? plan.cuts : [], design.kerf)
+    surface = createPanelSurface(
+      plan.outline,
+      detailedCuts ? plan.cuts : [],
+      design.kerf,
+      showCuts && (detailedCuts || canRenderCutoutVoids(plan)) ? plan.cutouts : [],
+    )
     if (detailedCuts) panelSurfaces.set(plan, { kerf: design.kerf, surface })
   }
   const facePositions: number[] = []
