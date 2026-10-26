@@ -68,6 +68,12 @@
   color: #685f58;
   white-space: nowrap;
 }
+.drawing-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 9px;
+}
 .outline-drawing-area {
   flex: 1;
   min-height: 80px;
@@ -275,6 +281,10 @@
   }
 }
 @media (max-width: 650px) {
+  .outline-editor .drawing-heading {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
   .outline-editor,
   .cut-plan-view {
     padding: 20px 15px 15px;

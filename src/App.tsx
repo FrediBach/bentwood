@@ -27,6 +27,7 @@ import {
   Square,
   Triangle,
   Undo2,
+  Upload,
   Waves,
   X,
 } from 'lucide-react'
@@ -395,6 +396,13 @@ export default function App() {
   const [notice, setNotice] = useState('')
   const [saved, setSaved] = useState(true)
   const fileInput = useRef<HTMLInputElement>(null)
+  const svgInput = useRef<HTMLInputElement>(null)
+  const [importingSVG, setImportingSVG] = useState(false)
+  const svgImportRequest = useRef(0)
+  const currentDesign = useRef(design)
+  useEffect(() => {
+    currentDesign.current = design
+  }, [design])
   const pointerHistory = useRef({ active: false, recorded: false })
   const plan = useMemo(() => createCutPlan(design), [design])
   const swatchSize = useMemo(() => getTestSwatchSheetSize(design), [design])
@@ -515,6 +523,48 @@ export default function App() {
     patch({ outline: kind })
     setPanel('outline')
     if (kind === 'custom') setView('outline')
+  }
+  async function importOutline(file: File) {
+    const request = ++svgImportRequest.current
+    setImportingSVG(true)
+    try {
+      if (file.size > 1024 * 1024) throw new Error('Choose an SVG file smaller than 1 MB.')
+      const [source, { importSVGOutline }] = await Promise.all([
+        file.text(),
+        import('./lib/svg-outline'),
+      ])
+      const previous = currentDesign.current
+      const result = await importSVGOutline(source, pathLength(previous.segments))
+      if (request !== svgImportRequest.current) return
+      if (previous !== currentDesign.current)
+        throw new Error('The design changed during import. Please import the SVG again.')
+      const next: Design = {
+        ...previous,
+        outline: 'custom',
+        customOutline: result.points,
+        width: result.width,
+        outlineCornerRadius: 0,
+      }
+      if (!validateDesign(next))
+        throw new Error(
+          'This outline exceeds the supported panel size or cut density. Shorten the bend path or increase cut spacing, then import again.',
+        )
+      update(next)
+      setPanel('outline')
+      setView('outline')
+      setMobilePanel('studio')
+      setResetKey((key) => key + 1)
+      setNotice(
+        `SVG outline imported. Scaled to ${pathLength(next.segments).toFixed(1)} × ${next.width.toFixed(1)} mm, with proportions preserved.${result.warning ? ` ${result.warning}` : ''}`,
+      )
+    } catch (error) {
+      if (request === svgImportRequest.current)
+        setNotice(
+          error instanceof Error ? error.message : 'This SVG outline could not be imported.',
+        )
+    } finally {
+      if (request === svgImportRequest.current) setImportingSVG(false)
+    }
   }
   function exportFile(format: 'svg' | 'dxf') {
     try {
@@ -815,6 +865,20 @@ export default function App() {
                     </button>
                   ))}
                 </div>
+                <Button
+                  variant="outline"
+                  className="full-width"
+                  disabled={importingSVG}
+                  onClick={() => svgInput.current?.click()}
+                  aria-label="Import SVG outline"
+                >
+                  <Upload size={15} />
+                  {importingSVG ? 'Importing SVG…' : 'Import SVG outline'}
+                </Button>
+                <p className="control-hint">
+                  One closed outline, without holes. Scaled to bend-path length with proportions
+                  preserved.
+                </p>
                 <NumberField
                   label="Panel width"
                   value={getPanelWidth(design)}
@@ -915,7 +979,12 @@ export default function App() {
                   resetKey={resetKey}
                 />
               ) : view === 'outline' ? (
-                <OutlineEditor design={design} onChange={update} />
+                <OutlineEditor
+                  design={design}
+                  onChange={update}
+                  onImportSVG={() => svgInput.current?.click()}
+                  importingSVG={importingSVG}
+                />
               ) : (
                 <CutPlanView design={design} plan={plan} large />
               )}
@@ -1297,6 +1366,18 @@ export default function App() {
               setNotice(err instanceof Error ? err.message : 'Could not open this project.')
             }
             e.target.value = ''
+          }}
+        />
+        <input
+          ref={svgInput}
+          type="file"
+          hidden
+          accept=".svg,image/svg+xml"
+          aria-label="Import SVG outline file"
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0]
+            event.currentTarget.value = ''
+            if (file) void importOutline(file)
           }}
         />
         {notice && (

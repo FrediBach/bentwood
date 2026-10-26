@@ -1,6 +1,14 @@
 import { useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
-import { ArrowDownRight, CirclePlus, MousePointer2, Pencil, Plus, Trash2 } from 'lucide-react'
+import {
+  ArrowDownRight,
+  CirclePlus,
+  MousePointer2,
+  Pencil,
+  Plus,
+  Trash2,
+  Upload,
+} from 'lucide-react'
 import type { CutPlan, Design, Point } from '../lib/types'
 import { cutPathData } from '../lib/cut-path'
 import {
@@ -235,9 +243,13 @@ function DimensionLines({
 export function OutlineEditor({
   design,
   onChange,
+  onImportSVG,
+  importingSVG,
 }: {
   design: Design
   onChange: (design: Design) => void
+  onImportSVG: () => void
+  importingSVG: boolean
 }) {
   const svgRef = useRef<SVGSVGElement>(null)
   const dragging = useRef<number | null>(null)
@@ -329,7 +341,19 @@ export function OutlineEditor({
           <span className="drawing-eyebrow">FLAT OUTLINE</span>
           <h2>Make it your own.</h2>
         </div>
-        <span className="drawing-scale">Dimensions in millimeters</span>
+        <div className="drawing-actions">
+          <span className="drawing-scale">Dimensions in millimeters</span>
+          <button
+            type="button"
+            className="editor-tool-button"
+            onClick={onImportSVG}
+            disabled={importingSVG}
+            aria-label="Import SVG outline"
+            title="Import one closed SVG outline, scaled to bend-path length with proportions preserved"
+          >
+            <Upload size={15} /> {importingSVG ? 'Importing…' : 'Import SVG'}
+          </button>
+        </div>
       </div>
       <div className="outline-drawing-area">
         <svg
