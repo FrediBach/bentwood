@@ -87,39 +87,137 @@ describe('outlines and staggered hinges', () => {
       )
     }
   })
-  it.each(['rectangle', 'triangle', 'ellipse', 'custom'] as const)(
-    'clips %s cuts to the contour while retaining an actual edge margin',
+  it.each(['rectangle', 'triangle', 'custom'] as const)(
+    'opens %s cuts at every outline boundary and retains interior bridges',
     (outline) => {
       const input = design({
         outline,
         customOutline: [
           { x: 0, y: 0 },
           { x: 1, y: 0 },
+          { x: 1, y: 0.25 },
+          { x: 0.35, y: 0.25 },
+          { x: 0.35, y: 0.75 },
+          { x: 1, y: 0.75 },
           { x: 1, y: 1 },
-          { x: 0.55, y: 1 },
-          { x: 0.55, y: 0.45 },
-          { x: 0.4, y: 0.45 },
-          { x: 0.4, y: 1 },
           { x: 0, y: 1 },
         ],
       })
       const plan = createCutPlan(input)
       expect(plan.cuts.length).toBeGreaterThan(0)
       for (const cut of plan.cuts) {
-        expect(cut.y2 - cut.y1).toBeLessThanOrEqual(input.cutLength + 1e-7)
-        for (const y of [cut.y1, (cut.y1 + cut.y2) / 2, cut.y2]) {
-          const point = { x: cut.x, y }
-          expect(inside(point, plan.outline)).toBe(true)
-          const clearance = Math.min(
-            ...plan.outline.map((a, i) =>
-              distanceToEdge(point, a, plan.outline[(i + 1) % plan.outline.length]),
-            ),
+        expect(cut.y2 - cut.y1).toBeLessThanOrEqual(input.cutLength + input.bridge + 1e-7)
+        expect(inside({ x: cut.x, y: (cut.y1 + cut.y2) / 2 }, plan.outline)).toBe(true)
+      }
+      for (const x of new Set(plan.cuts.map((cut) => cut.x))) {
+        const crossings = plan.outline
+          .flatMap((a, i) => {
+            const b = plan.outline[(i + 1) % plan.outline.length]
+            return (a.x <= x && b.x > x) || (b.x <= x && a.x > x)
+              ? [a.y + ((x - a.x) * (b.y - a.y)) / (b.x - a.x)]
+              : []
+          })
+          .sort((a, b) => a - b)
+        for (let i = 0; i + 1 < crossings.length; i += 2) {
+          const lower = crossings[i],
+            upper = crossings[i + 1]
+          const cuts = plan.cuts.filter(
+            (cut) => cut.x === x && cut.y1 >= lower - 1e-7 && cut.y2 <= upper + 1e-7,
           )
-          expect(clearance).toBeGreaterThanOrEqual(input.edgeMargin - 1e-6)
+          expect(cuts.length).toBeGreaterThanOrEqual(2)
+          expect(cuts[0].y1).toBeCloseTo(lower, 10)
+          expect(cuts.at(-1)!.y2).toBeCloseTo(upper, 10)
+          for (const cut of [cuts[0], cuts.at(-1)!]) {
+            const point = { x, y: cut === cuts[0] ? cut.y1 : cut.y2 }
+            const clearance = Math.min(
+              ...plan.outline.map((a, edge) =>
+                distanceToEdge(point, a, plan.outline[(edge + 1) % plan.outline.length]),
+              ),
+            )
+            expect(clearance).toBeLessThan(1e-8)
+          }
+          for (let c = 1; c < cuts.length; c++)
+            expect(cuts[c].y1 - cuts[c - 1].y2).toBeCloseTo(input.bridge, 10)
         }
       }
     },
   )
+  it.each(['circle', 'ellipse'] as const)(
+    'opens %s cuts on the exact exported curve',
+    (outline) => {
+      const input = design({ outline })
+      const plan = createCutPlan(input)
+      const radiusX = plan.length / 2,
+        radiusY = plan.width / 2
+      for (const x of new Set(plan.cuts.map((cut) => cut.x))) {
+        const cuts = plan.cuts.filter((cut) => cut.x === x)
+        expect(cuts.length).toBeGreaterThanOrEqual(2)
+        const offset = radiusY * Math.sqrt(1 - ((x - radiusX) / radiusX) ** 2)
+        expect(cuts[0].y1).toBeCloseTo(radiusY - offset, 10)
+        expect(cuts.at(-1)!.y2).toBeCloseTo(radiusY + offset, 10)
+        for (const cut of cuts) {
+          for (const y of [cut.y1, cut.y2]) {
+            expect(
+              ((x - radiusX) / radiusX) ** 2 + ((y - radiusY) / radiusY) ** 2,
+            ).toBeLessThanOrEqual(1 + 1e-10)
+          }
+        }
+      }
+    },
+  )
+  it.each([25, 26, 51, 52, 140])(
+    'reaches edges even when a %s mm width ends inside a bridge phase',
+    (width) => {
+      const input = design({ width })
+      const plan = createCutPlan(input)
+      for (const x of new Set(plan.cuts.map((cut) => cut.x))) {
+        const cuts = plan.cuts.filter((cut) => cut.x === x)
+        expect(cuts[0].y1).toBe(0)
+        expect(cuts.at(-1)!.y2).toBe(width)
+        expect(cuts.length).toBeGreaterThanOrEqual(2)
+        for (const cut of cuts)
+          expect(cut.y2 - cut.y1).toBeLessThanOrEqual(input.cutLength + input.bridge + 1e-7)
+      }
+    },
+  )
+  it('opens an inset polygon where both boundaries cross bridge phases', () => {
+    const input = design({
+      outline: 'custom',
+      customOutline: [
+        { x: 0, y: 25 / 140 },
+        { x: 1, y: 25 / 140 },
+        { x: 1, y: 51 / 140 },
+        { x: 0, y: 51 / 140 },
+      ],
+    })
+    const plan = createCutPlan(input)
+    for (const x of new Set(plan.cuts.map((cut) => cut.x))) {
+      const cuts = plan.cuts.filter((cut) => cut.x === x)
+      expect(cuts[0].y1).toBeCloseTo(25, 10)
+      expect(cuts.at(-1)!.y2).toBeCloseTo(51, 10)
+      expect(cuts.length).toBeGreaterThanOrEqual(2)
+    }
+  })
+  it('retains staggered bridges in spans shorter than the nominal cut length', () => {
+    const input = design({ width: 8 })
+    const plan = createCutPlan(input)
+    const columns = [...new Set(plan.cuts.map((cut) => cut.x))]
+    const bridgeStarts: number[] = []
+    for (const x of columns) {
+      const cuts = plan.cuts.filter((cut) => cut.x === x)
+      expect(cuts).toHaveLength(2)
+      expect(cuts[0].y1).toBe(0)
+      expect(cuts[1].y2).toBe(8)
+      expect(cuts[1].y1 - cuts[0].y2).toBeCloseTo(input.bridge, 10)
+      bridgeStarts.push(cuts[0].y2)
+    }
+    expect(bridgeStarts[1] - bridgeStarts[0] - input.bridge).toBeGreaterThanOrEqual(0.2 - 1e-8)
+  })
+  it('leaves too-narrow sections intact instead of cutting them loose', () => {
+    const plan = createCutPlan(design({ width: 4, bridge: 2 }))
+    expect(plan.cuts).toHaveLength(0)
+    expect(plan.warnings.some((warning) => warning.includes('narrow outline sections'))).toBe(true)
+  })
   it('preserves bridges between cuts in the same column and alternates their heights', () => {
     const input = design()
     const cuts = createCutPlan(input).cuts
@@ -130,6 +228,34 @@ describe('outlines and staggered hinges', () => {
       expect(first[i].y1 - first[i - 1].y2).toBeCloseTo(input.bridge, 9)
     expect(first[1].y1).not.toBe(second[1].y1)
     expect(columns[1] - columns[0]).toBe(input.spacing)
+  })
+  it('keeps the minimum usable narrow pattern staggered without overlapping bridge bands', () => {
+    const input = design({ width: 5, bridge: 2 })
+    const cuts = createCutPlan(input).cuts
+    const columns = [...new Set(cuts.map((cut) => cut.x))]
+    const first = cuts.filter((cut) => cut.x === columns[0])
+    const second = cuts.filter((cut) => cut.x === columns[1])
+    expect(first).toHaveLength(2)
+    expect(second).toHaveLength(2)
+    expect(second[0].y2 - first[1].y1).toBeGreaterThanOrEqual(0.2 - 1e-8)
+  })
+  it('does not round tiny edge segments into zero-length SVG or DXF cuts', () => {
+    const input = design({
+      outline: 'custom',
+      customOutline: [
+        { x: 0, y: (24 - 0.0000002) / 140 },
+        { x: 1, y: (24 - 0.0000002) / 140 },
+        { x: 1, y: (130 + 0.0000002) / 140 },
+        { x: 0, y: (130 + 0.0000002) / 140 },
+      ],
+    })
+    const plan = createCutPlan(input)
+    for (const cut of plan.cuts)
+      expect(Number(cut.y2.toFixed(6))).toBeGreaterThan(Number(cut.y1.toFixed(6)))
+    const svg = exportSVG(input)
+    for (const match of svg.matchAll(/d="M[\d.]+ ([\d.]+) V([\d.]+)"/g)) {
+      expect(Number(match[2])).toBeGreaterThan(Number(match[1]))
+    }
   })
   it('rejects crossed, zero-area and duplicate-vertex contours', () => {
     expect(
@@ -197,11 +323,15 @@ describe('manufacturing export', () => {
     expect(svg.match(/<path /g)).toHaveLength(plan.cuts.length + 1)
     expect(svg).toContain('A &lt;test&gt; &amp; panel')
     expect(svg).toContain('no kerf compensation')
+    expect(svg).toContain('d="M76.5 0 V24"')
+    expect(svg).toContain('V140"')
     const dxf = exportDXF(input)
     expect(dxf).toContain('$INSUNITS\n70\n4')
     expect(dxf.match(/0\nLINE\n/g)).toHaveLength(plan.cuts.length)
     expect(dxf).toContain('POLYLINE\n100\nAcDbEntity\n8\nOUTER_CONTOUR')
     expect(dxf).toContain('70\n1')
+    expect(dxf).toContain('10\n76.5\n20\n140\n30\n0\n11\n76.5\n21\n116')
+    expect(dxf).toContain('21\n0\n31\n0')
   })
   it('exports circular and elliptical contours as actual curves', () => {
     expect(exportSVG(design({ outline: 'circle' }))).toContain(' A153.539816 153.539816 ')
@@ -229,11 +359,24 @@ describe('project import validation', () => {
     const input = { ...defaultDesign, unknown: 'discarded' }
     expect(validateDesign(input)).not.toHaveProperty('unknown')
   })
+  it('migrates old saved projects without retaining the perimeter rail', () => {
+    const legacy = { ...defaultDesign, version: 1, edgeMargin: 4, name: 'Saved study' }
+    const migrated = validateDesign(legacy)
+    expect(migrated).toEqual({ ...defaultDesign, name: 'Saved study' })
+    expect(migrated).not.toHaveProperty('edgeMargin')
+    expect(migrated!.version).toBe(2)
+    const cuts = createCutPlan(migrated!).cuts
+    expect(cuts[0].y1).toBe(0)
+    expect(cuts.some((cut) => cut.y2 === migrated!.width)).toBe(true)
+    expect(validateDesign({ ...legacy, edgeMargin: NaN })).toBeNull()
+    const { edgeMargin: _unused, ...withoutMargin } = legacy
+    expect(validateDesign(withoutMargin)?.version).toBe(2)
+  })
   it.each([
     null,
     [],
     {},
-    { ...defaultDesign, version: 2 },
+    { ...defaultDesign, version: 3 },
     { ...defaultDesign, width: NaN },
     { ...defaultDesign, segments: [] },
     { ...defaultDesign, spacing: 0 },

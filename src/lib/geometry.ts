@@ -48,7 +48,7 @@ export const presets: { id: string; name: string; description: string; segments:
 ]
 
 export const defaultDesign: Design = {
-  version: 1,
+  version: 2,
   name: 'Untitled form',
   segments: presets[0].segments.map((segment) => ({ ...segment })),
   outline: 'rectangle',
@@ -64,7 +64,6 @@ export const defaultDesign: Design = {
   spacing: 3,
   bridge: 2,
   cutLength: 24,
-  edgeMargin: 4,
   kerf: 0.15,
 }
 
@@ -198,51 +197,64 @@ function polygonIntervals(polygon: Point[], x: number): [number, number][] {
   return result
 }
 
-function edgeExclusions(polygon: Point[], x: number, margin: number): [number, number][] {
-  const exclusions: [number, number][] = []
-  for (let i = 0; i < polygon.length; i++) {
-    const a = polygon[i]
-    const b = polygon[(i + 1) % polygon.length]
-    if (x < Math.min(a.x, b.x) - margin || x > Math.max(a.x, b.x) + margin) continue
-    const length = distance(a, b)
-    if (length < EPS) continue
-    const nx = (-(b.y - a.y) / length) * margin
-    const ny = ((b.x - a.x) / length) * margin
-    exclusions.push(
-      ...polygonIntervals(
-        [
-          { x: a.x + nx, y: a.y + ny },
-          { x: b.x + nx, y: b.y + ny },
-          { x: b.x - nx, y: b.y - ny },
-          { x: a.x - nx, y: a.y - ny },
-        ],
-        x,
-      ),
-    )
-    // End caps complete the edge capsule and preserve margin at concave corners.
-    for (const point of [a, b]) {
-      const delta = x - point.x
-      if (Math.abs(delta) < margin) {
-        const dy = Math.sqrt(margin * margin - delta * delta)
-        exclusions.push([point.y - dy, point.y + dy])
-      }
-    }
-  }
-  return exclusions
+/** Exact cross sections keep the hinge connected to analytic exported ellipses. */
+function outlineIntervals(design: Design, polygon: Point[], x: number): [number, number][] {
+  if (design.outline !== 'circle' && design.outline !== 'ellipse')
+    return polygonIntervals(polygon, x)
+  const radiusX = pathLength(design.segments) / 2
+  const radiusY = getPanelWidth(design) / 2
+  const normalizedX = (x - radiusX) / radiusX
+  if (Math.abs(normalizedX) >= 1) return []
+  const offset = radiusY * Math.sqrt(Math.max(0, 1 - normalizedX * normalizedX))
+  return [[radiusY - offset, radiusY + offset]]
 }
 
-function insetIntervals(polygon: Point[], x: number, margin: number): [number, number][] {
-  let intervals = polygonIntervals(polygon, x)
-  for (const [lower, upper] of edgeExclusions(polygon, x, margin)) {
-    intervals = intervals.flatMap(([a, b]): [number, number][] => {
-      if (upper <= a || lower >= b) return [[a, b]]
-      const remaining: [number, number][] = []
-      if (lower > a) remaining.push([a, Math.min(b, lower)])
-      if (upper < b) remaining.push([Math.max(a, upper), b])
-      return remaining
-    })
+/**
+ * Cuts are the complement of complete interior bridges: no perimeter rail remains.
+ * A bridge crossing the outline is omitted, so an edge cut can be up to one bridge
+ * longer than the nominal cut length. Short spans retain one staggered bridge.
+ */
+function edgeOpenCuts(
+  x: number,
+  lower: number,
+  upper: number,
+  column: number,
+  design: Design,
+): CutLine[] | null {
+  const bridge = design.bridge
+  const minimumCut = Math.max(0.2, design.kerf)
+  const span = upper - lower
+  // Adjacent staggered bridges must not overlap into another continuous rail.
+  if (span < 2 * bridge + 3 * minimumCut - EPS) return null
+  const period = design.cutLength + bridge
+  const offset = column % 2 ? period / 2 : 0
+  const bridges: [number, number][] = []
+  const first = Math.floor((lower - offset - design.cutLength) / period)
+  for (let index = first; ; index++) {
+    const start = offset + design.cutLength + index * period
+    if (start >= upper) break
+    const end = start + bridge
+    if (span > period + EPS && start > lower + EPS && end < upper - EPS) {
+      // Preserve a nonzero segment after six-decimal SVG/DXF serialization.
+      const adjustedStart = Math.max(lower + 0.00001, Math.min(upper - bridge - 0.00001, start))
+      bridges.push([adjustedStart, adjustedStart + bridge])
+    }
   }
-  return intervals
+  if (!bridges.length) {
+    // Without a bridge a short outline section would be sliced right through.
+    const freeLength = span - bridge
+    const separation = Math.max(bridge + minimumCut, freeLength / 3)
+    const start = lower + freeLength / 2 + ((column % 2 ? 1 : -1) * separation) / 2
+    bridges.push([start, start + bridge])
+  }
+  const cuts: CutLine[] = []
+  let cursor = lower
+  for (const [start, end] of bridges) {
+    cuts.push({ x, y1: cursor, y2: start })
+    cursor = end
+  }
+  cuts.push({ x, y1: cursor, y2: upper })
+  return cuts
 }
 
 function pathOverlaps(segments: Segment[]): boolean {
@@ -282,8 +294,6 @@ export function createCutPlan(design: Design): CutPlan {
     warnings.push(
       'The laser kerf is as wide as a ligament or bridge. Increase spacing or bridge size.',
     )
-  if (design.edgeMargin <= design.kerf / 2)
-    warnings.push('The edge margin is smaller than half the laser kerf.')
   const period = Math.max(0.5, design.cutLength + design.bridge)
   const spacing = Math.max(0.5, design.spacing)
   const estimatedCuts =
@@ -296,6 +306,7 @@ export function createCutPlan(design: Design): CutPlan {
     warnings.push(
       'This pattern exceeds 50,000 cuts. Increase spacing or cut length before exporting.',
     )
+  let skippedNarrowSpans = false
   if (validOutline && estimatedCuts <= 50000) {
     let start = 0
     for (const segment of design.segments) {
@@ -303,20 +314,20 @@ export function createCutPlan(design: Design): CutPlan {
       if (segment.type === 'arc') {
         for (let column = 0; (column + 0.5) * spacing < segmentSize; column++) {
           const x = start + (column + 0.5) * spacing
-          const intervals = insetIntervals(outline, x, Math.max(0, design.edgeMargin))
-          const offset = column % 2 ? period / 2 : 0
-          for (let base = -period + offset; base < width; base += period) {
-            for (const [lower, upper] of intervals) {
-              const y1 = Math.max(lower, base)
-              const y2 = Math.min(upper, base + design.cutLength)
-              if (y2 - y1 > Math.max(0.2, design.kerf)) cuts.push({ x, y1, y2 })
-            }
+          for (const [lower, upper] of outlineIntervals(design, outline, x)) {
+            const columnCuts = edgeOpenCuts(x, lower, upper, column, design)
+            if (columnCuts) cuts.push(...columnCuts)
+            else skippedNarrowSpans = true
           }
         }
       }
       start += segmentSize
     }
   }
+  if (skippedNarrowSpans)
+    warnings.push(
+      'Some narrow outline sections cannot fit separated staggered bridges. Those sections remain uncut; widen them or reduce the bridge size.',
+    )
   if (
     validOutline &&
     !cuts.length &&
@@ -324,7 +335,7 @@ export function createCutPlan(design: Design): CutPlan {
     estimatedCuts <= 50000
   )
     warnings.push(
-      'No hinge cuts fit inside the outline. Reduce the edge margin or increase the panel size.',
+      'No hinge cuts fit inside the outline. Increase the panel size or reduce the bridge size.',
     )
   const perimeter = outline.reduce(
     (sum, point, i) => sum + distance(point, outline[(i + 1) % outline.length]),
@@ -572,13 +583,17 @@ export function validateDesign(input: unknown): Design | null {
   if (!input || typeof input !== 'object' || Array.isArray(input)) return null
   const value = input as Record<string, unknown>
   if (
-    value.version !== 1 ||
+    (value.version !== 1 && value.version !== 2) ||
     typeof value.name !== 'string' ||
     value.name.length > 100 ||
     !Array.isArray(value.segments) ||
     value.segments.length < 1 ||
     value.segments.length > 50
   )
+    return null
+  // Legacy projects used a perimeter rail. Drop it on migration so saved designs
+  // receive the corrected edge-open hinge behavior without losing other settings.
+  if (value.version === 1 && value.edgeMargin !== undefined && !inRange(value.edgeMargin, 0, 100))
     return null
   const segments: Segment[] = []
   const ids = new Set<string>()
@@ -622,7 +637,6 @@ export function validateDesign(input: unknown): Design | null {
     !inRange(value.spacing, 0.5, 30) ||
     !inRange(value.bridge, 0.2, 30) ||
     !inRange(value.cutLength, 1, 200) ||
-    !inRange(value.edgeMargin, 0, 100) ||
     !inRange(value.kerf, 0.01, 2)
   )
     return null
@@ -640,7 +654,7 @@ export function validateDesign(input: unknown): Design | null {
   }
   if (!isSimplePolygon(customOutline)) return null
   const result: Design = {
-    version: 1,
+    version: 2,
     name: value.name,
     segments,
     outline: value.outline as Design['outline'],
@@ -651,7 +665,6 @@ export function validateDesign(input: unknown): Design | null {
     spacing: value.spacing,
     bridge: value.bridge,
     cutLength: value.cutLength,
-    edgeMargin: value.edgeMargin,
     kerf: value.kerf,
   }
   const curvedLength = segments

@@ -64,21 +64,17 @@ test('edit curves, undo, save, reload and import project', async ({ page }) => {
   await expect(page.getByLabel('Project name')).toHaveValue('Wave study')
   await expect(page.getByRole('spinbutton', { name: 'Radius' })).toHaveValue('70')
   data.name = 'Imported project'
-  await page
-    .getByLabel('Import project file')
-    .setInputFiles({
-      name: 'import.json',
-      mimeType: 'application/json',
-      buffer: Buffer.from(JSON.stringify(data)),
-    })
+  await page.getByLabel('Import project file').setInputFiles({
+    name: 'import.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(data)),
+  })
   await expect(page.getByLabel('Project name')).toHaveValue('Imported project')
-  await page
-    .getByLabel('Import project file')
-    .setInputFiles({
-      name: 'invalid.json',
-      mimeType: 'application/json',
-      buffer: Buffer.from('{"bad":true}'),
-    })
+  await page.getByLabel('Import project file').setInputFiles({
+    name: 'invalid.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from('{"bad":true}'),
+  })
   await expect(page.getByRole('status')).toContainText('not a valid Bentwood project')
   await expect(page.getByLabel('Project name')).toHaveValue('Imported project')
 })
@@ -161,4 +157,109 @@ test('mobile panels and accessible export dialog', async ({ page }) => {
   ).toEqual([])
   await page.keyboard.press('Escape')
   await expect(page.getByRole('dialog')).toHaveCount(0)
+})
+
+test('existing projects migrate to cuts that meet the panel edges', async ({ page }) => {
+  const legacyProject = {
+    version: 1,
+    name: 'Existing hinge study',
+    segments: [
+      { id: 'a', type: 'straight', length: 75 },
+      { id: 'b', type: 'arc', radius: 50, angle: 180 },
+      { id: 'c', type: 'straight', length: 75 },
+    ],
+    outline: 'rectangle',
+    width: 140,
+    customOutline: [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 1, y: 1 },
+      { x: 0, y: 1 },
+    ],
+    thickness: 3,
+    material: 'birch',
+    spacing: 3,
+    bridge: 2,
+    cutLength: 24,
+    edgeMargin: 4,
+    kerf: 0.15,
+  }
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.addInitScript((project) => {
+    if (!localStorage.getItem('bentwood.design.v1'))
+      localStorage.setItem('bentwood.design.v1', JSON.stringify(project))
+  }, legacyProject)
+  await page.goto('/')
+  await expect(page.getByLabel('Project name')).toHaveValue(legacyProject.name)
+  await expect(page.getByRole('spinbutton', { name: 'Edge margin' })).toHaveCount(0)
+  await expect(page.locator('.plywood-preview canvas')).toBeVisible()
+  await page.getByRole('button', { name: 'Cut plan', exact: true }).click()
+  const cuts = await page.locator('.cut-plan-view svg line').evaluateAll((lines) =>
+    lines.map((line) => ({
+      x: Number(line.getAttribute('x1')),
+      y1: Number(line.getAttribute('y1')),
+      y2: Number(line.getAttribute('y2')),
+    })),
+  )
+  const columns = [...new Set(cuts.map((cut) => cut.x))]
+  expect(columns.length).toBeGreaterThan(30)
+  for (const x of columns) {
+    const column = cuts.filter((cut) => cut.x === x).sort((a, b) => a.y1 - b.y1)
+    expect(column[0].y1).toBe(0)
+    expect(column.at(-1)!.y2).toBe(140)
+    expect(column.length).toBeGreaterThan(1)
+    for (let i = 1; i < column.length; i++)
+      expect(column[i].y1 - column[i - 1].y2).toBeCloseTo(2, 6)
+  }
+  await page.screenshot({ path: 'test-results/edge-cut-plan.png' })
+  const saved = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save project file', exact: true }).click()
+  const file = await saved
+  const migrated = JSON.parse(await readFile((await file.path())!, 'utf8'))
+  expect(migrated.version).toBe(2)
+  expect(migrated).not.toHaveProperty('edgeMargin')
+  expect(migrated.name).toBe(legacyProject.name)
+  await page.reload()
+  await expect(page.getByLabel('Project name')).toHaveValue(legacyProject.name)
+  expect(errors).toEqual([])
+})
+
+test('3D preview supports open cuts on round and concave outlines', async ({ page }) => {
+  const errors: string[] = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.goto('/')
+  await page.getByRole('tab', { name: 'Panel outline' }).click()
+  await page.getByRole('button', { name: 'Circle', exact: true }).click()
+  await expect(page.locator('.plywood-preview canvas')).toBeVisible()
+  await page.getByLabel('Unfold').fill('0')
+  await page.screenshot({ path: 'test-results/edge-circle-flat.png' })
+  await page.getByLabel('Unfold').fill('100')
+  await page.getByRole('button', { name: 'Triangle', exact: true }).click()
+  await expect(page.locator('.plywood-preview canvas')).toBeVisible()
+  await page.screenshot({ path: 'test-results/edge-triangle-bent.png' })
+  const saved = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save project file', exact: true }).click()
+  const file = await saved
+  const project = JSON.parse(await readFile((await file.path())!, 'utf8'))
+  project.outline = 'custom'
+  project.customOutline = [
+    { x: 0, y: 0 },
+    { x: 1, y: 0 },
+    { x: 1, y: 1 },
+    { x: 0.6, y: 1 },
+    { x: 0.6, y: 0.4 },
+    { x: 0.4, y: 0.4 },
+    { x: 0.4, y: 1 },
+    { x: 0, y: 1 },
+  ]
+  await page.getByLabel('Import project file').setInputFiles({
+    name: 'concave.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(project)),
+  })
+  await expect(page.getByRole('status')).toContainText('Project opened.')
+  await expect(page.locator('.plywood-preview canvas')).toBeVisible()
+  await page.screenshot({ path: 'test-results/edge-concave-bent.png' })
+  expect(errors).toEqual([])
 })

@@ -4,7 +4,7 @@ export type Segment =
   | { id: string; type: 'arc'; radius: number; angle: number }
 export type OutlineKind = 'rectangle' | 'square' | 'ellipse' | 'circle' | 'triangle' | 'custom'
 export type Design = {
-  version: 1
+  version: 2
   name: string
   segments: Segment[]
   outline: OutlineKind
@@ -15,7 +15,6 @@ export type Design = {
   spacing: number
   bridge: number
   cutLength: number
-  edgeMargin: number
   kerf: number
 }
 export type CutLine = { x: number; y1: number; y2: number }

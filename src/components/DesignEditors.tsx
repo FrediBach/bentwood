@@ -554,14 +554,27 @@ export function CutPlanView({
           />
         )}
         {large && <DimensionLines length={plan.length} width={plan.width} padding={padding} />}
-        <polygon
-          points={pointString(plan.outline)}
-          fill="#fffdf5"
-          stroke="#a8493f"
-          strokeWidth={large ? 1.6 : 1.2}
-          strokeLinejoin="round"
-          vectorEffect="non-scaling-stroke"
-        />
+        {design.outline === 'circle' || design.outline === 'ellipse' ? (
+          <ellipse
+            cx={plan.length / 2}
+            cy={plan.width / 2}
+            rx={plan.length / 2}
+            ry={plan.width / 2}
+            fill="#fffdf5"
+            stroke="#a8493f"
+            strokeWidth={large ? 1.6 : 1.2}
+            vectorEffect="non-scaling-stroke"
+          />
+        ) : (
+          <polygon
+            points={pointString(plan.outline)}
+            fill="#fffdf5"
+            stroke="#a8493f"
+            strokeWidth={large ? 1.6 : 1.2}
+            strokeLinejoin="round"
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
         <g stroke="#3c699a" strokeWidth={large ? 0.9 : 0.6} vectorEffect="non-scaling-stroke">
           {plan.cuts.map((cut, index) => (
             <line

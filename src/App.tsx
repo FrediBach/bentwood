@@ -50,6 +50,7 @@ import {
 import type { Design, OutlineKind, Segment } from './lib/types'
 
 type View = 'preview' | 'outline' | 'plan'
+// Keep the original storage key so validation can migrate existing projects in place.
 const storageKey = 'bentwood.design.v1'
 function loadDesign() {
   try {
@@ -859,7 +860,7 @@ export default function App() {
                 <span>LIVING HINGE</span>
                 <span className="mini-badge">Staggered</span>
               </div>
-              <p className="control-hint">Cuts follow the curved sections.</p>
+              <p className="control-hint">Cuts reach the panel edges in curved sections.</p>
               <div className="field-row">
                 <NumberField
                   label="Cut spacing"
@@ -885,13 +886,6 @@ export default function App() {
                   onChange={(v) => patch({ cutLength: v })}
                   min={5}
                   max={80}
-                />
-                <NumberField
-                  label="Edge margin"
-                  value={design.edgeMargin}
-                  onChange={(v) => patch({ edgeMargin: v })}
-                  min={1}
-                  max={20}
                 />
               </div>
             </section>
@@ -1077,8 +1071,9 @@ export default function App() {
                 <div>
                   <h3>Give it some give.</h3>
                   <p>
-                    Set your plywood thickness and hinge pattern. Staggered cuts are added only
-                    along curves. Orbit the preview and unfold it to see the transformation.
+                    Set your plywood thickness and hinge pattern. Cuts reach the panel edges in
+                    curved sections, with staggered bridges between them. Orbit the preview and
+                    unfold it to see the transformation.
                   </p>
                 </div>
               </li>

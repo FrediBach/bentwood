@@ -30,7 +30,7 @@ The browser tests use Playwright. If its Chromium browser is missing, install it
 1. Choose a starting form, or add straight and curved segments. Select a segment in the diagram or list to edit its length, radius, bend angle, and direction. The segments join tangentially.
 2. Choose a rectangle, square, ellipse, circle, triangle, or custom outline. The sheet’s unrolled length comes from the bend path. Panel width runs across the sheet; squares and circles link width to length.
 3. For a custom outline, drag vertices, double-click an edge to insert a vertex, or edit the selected point’s millimetre coordinates. The outline must remain a simple polygon.
-4. Set plywood thickness, nominal laser kerf, cut spacing, bridge size, cut length, and edge margin. Staggered hinge cuts are generated in curved regions and clipped to the panel outline.
+4. Set plywood thickness, nominal laser kerf, cut spacing, bridge size, and cut length. Staggered hinge cuts are generated in curved regions and reach the panel outline at both ends, with internal bridges between cuts.
 5. Inspect the 3D form, unfold it with the slider, and review the flat outline and cut plan. Export SVG or DXF when ready.
 
 The desktop workspace stays within the viewport, with individual controls scrolling when needed. Smaller screens switch between the design, studio, and material panels.
@@ -40,7 +40,7 @@ The desktop workspace stays within the viewport, with individual controls scroll
 - Drag the 3D preview to orbit, scroll to zoom, and use the camera menu for perspective, top, or front views. Focus the preview and use arrow keys to orbit, `+` / `−` to zoom, and `Home` to reset.
 - Focus an outline vertex and use arrow keys to move it; `Delete` / `Backspace` removes it when at least three vertices remain. Numeric coordinate fields offer precise editing.
 - `⌘/Ctrl Z` undoes, `⌘/Ctrl Shift Z` redoes, and `⌘/Ctrl S` downloads a project file.
-- The current design is saved automatically in browser `localStorage`. Use **Save project file** to keep a portable `.bentwood.json` backup and **Open project** to restore one.
+- The current design is saved automatically in browser `localStorage`. Older projects migrate automatically to version 2, replacing the former edge margin with cuts that reach the outline. Use **Save project file** to keep a portable `.bentwood.json` backup and **Open project** to restore one.
 
 There is no backend, account, upload service, or cloud synchronization. Browser storage belongs to the current browser and site address; clearing site data removes the saved design. Download a project before moving between the local app and a hosted domain. If browser storage is unavailable, the app indicates that a download is needed to save.
 
@@ -55,6 +55,8 @@ SVG and DXF use **millimetres at 1:1 scale**. Import without resizing and verify
 
 Circular and elliptical exteriors are exported as true curves: SVG arc commands, DXF `CIRCLE` / `ELLIPSE` entities. Polygon exteriors use straight edges. DXF declares millimetre insertion units; SVG includes physical dimensions and a matching `viewBox`.
 
+Hinge cuts reach the outline at both ends of each cut column. Internal bridges remain staggered; an end cut can extend by up to one bridge width beyond the nominal cut length to meet the edge. Sections too narrow to accommodate staggered bridges remain uncut and are reported in the design warnings.
+
 All exported paths are **laser centre lines**. Nominal kerf is used in the visual preview and design checks; **no kerf compensation is applied to the exported toolpaths**. Set compensation, power, speed, passes, and cutting order in the laser software. Bentwood does not generate machine-specific G-code or estimate cutting time.
 
 ## Geometry and physical limits
@@ -62,10 +64,10 @@ All exported paths are **laser centre lines**. Nominal kerf is used in the visua
 - The bend path is a sequence of straight lines and circular arcs, measured at the sheet’s neutral axis. Unrolled length is the sum of straight lengths and arc lengths (`radius × angle in radians`).
 - The model represents a continuous sheet bent in one direction along that path. It supports developable forms, including concave panel outlines, but not compound curvature, twisting, branching, or multiple joined panels.
 - Custom outlines are simple polygons with up to 128 vertices. Interior holes, SVG import, and freehand or Bézier outline curves are not supported. Self-intersecting and degenerate polygons are rejected.
-- The 3D surface is tessellated. Circle and ellipse previews use 128 outline vertices; their exported exterior curves remain analytic. Hinge placement uses the sampled outline conservatively.
-- The preview preserves neutral-axis length while unfolding. It shows thickness, grain appearance, exposed plywood layers, and laser slots. Above 2,500 slots, it displays every slot as a surface centre line and labels the simplified view; the export still includes the full pattern.
+- The 3D surface is tessellated. Circle and ellipse previews use 128 outline vertices; their exported exterior curves remain analytic. Hinge endpoints intersect the actual polygon edges or the analytic circle/ellipse, so exported cuts reach the exported contour.
+- The preview preserves neutral-axis length while unfolding. It shows thickness, grain appearance, exposed plywood layers, and laser slots. Slots that meet the edge are subtracted from the contour, including its thickness walls. Above 2,500 slots, it displays every slot as a surface centre line and labels the simplified view; the export still includes the full pattern.
 - Material selection changes appearance. It is not a calibrated material model. Strength, glue layers, grain direction, hinge torsion, springback, heat effects, and assembly forces are not simulated.
-- Tight-bend, overlapping-path, margin, and ligament warnings are geometric checks, not proof that a panel can be manufactured or will hold its shape. Test a small hinge using the intended plywood and cutter before production.
+- Tight-bend, overlapping-path, narrow-span, and ligament warnings are geometric checks, not proof that a panel can be manufactured or will hold its shape. Test a small hinge using the intended plywood and cutter before production.
 - Designs are limited to 10,000 mm of path and patterns estimated above 50,000 cuts are rejected to bound resource use. Imported project files are schema-validated and limited to 1 MB.
 
 ## Code map
@@ -76,6 +78,7 @@ All exported paths are **laser centre lines**. Nominal kerf is used in the visua
 | `src/lib/types.ts`                  | Versioned project schema and geometry types                                          |
 | `src/lib/geometry.ts`               | Arc-length sampling, outlines, clipped hinge cuts, validation, SVG/DXF generation    |
 | `src/lib/geometry.test.ts`          | Geometry and export regression tests                                                 |
+| `src/lib/panel-surface.ts`          | Kerf subtraction and open-edge boundaries for the 3D mesh                            |
 | `src/components/DesignEditors.tsx`  | Bend-path diagram, custom polygon editing, cut-plan views                            |
 | `src/components/PlywoodPreview.tsx` | three.js mesh deformation, material textures, lighting, camera controls              |
 | `src/components/ui/`                | Local shadcn/ui primitives                                                           |

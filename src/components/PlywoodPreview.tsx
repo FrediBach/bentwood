@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { samplePath, segmentLength } from '@/lib/geometry'
+import { createPanelSurface, type PanelSurface } from '@/lib/panel-surface'
 import type { CutPlan, Design, Point, Segment } from '@/lib/types'
 
 type Props = {
@@ -30,6 +31,7 @@ type PreviewContext = {
 }
 
 const grainCanvases = new Map<Design['material'], HTMLCanvasElement>()
+const panelSurfaces = new WeakMap<CutPlan, { kerf: number; surface: PanelSurface }>()
 
 function woodTexture(material: Design['material']) {
   const cached = grainCanvases.get(material)
@@ -154,22 +156,15 @@ function createPanel(design: Design, plan: CutPlan, bend: number, showCuts: bool
   const group = new THREE.Group()
   if (plan.outline.length < 3) return group
   const segments = previewSegments(design.segments, bend)
-  const contour = plan.outline.map((point) => new THREE.Vector2(point.x, point.y))
-  // Real openings, with the exported centerline as the center of each kerf.
+  // Subtract kerfs first: edge cuts must form open notches in the perimeter.
   const detailedCuts = showCuts && plan.cuts.length <= 2500
-  const holes = detailedCuts
-    ? plan.cuts.map((cut) => {
-        const halfKerf = Math.max(0.06, design.kerf / 2)
-        return [
-          new THREE.Vector2(cut.x - halfKerf, cut.y1),
-          new THREE.Vector2(cut.x - halfKerf, cut.y2),
-          new THREE.Vector2(cut.x + halfKerf, cut.y2),
-          new THREE.Vector2(cut.x + halfKerf, cut.y1),
-        ]
-      })
-    : []
-  const faces = THREE.ShapeUtils.triangulateShape(contour, holes)
-  const flatVertices = [...contour, ...holes.flat()]
+  let surface: PanelSurface
+  const cached = panelSurfaces.get(plan)
+  if (detailedCuts && cached?.kerf === design.kerf) surface = cached.surface
+  else {
+    surface = createPanelSurface(plan.outline, detailedCuts ? plan.cuts : [], design.kerf)
+    if (detailedCuts) panelSurfaces.set(plan, { kerf: design.kerf, surface })
+  }
   const facePositions: number[] = []
   const faceUVs: number[] = []
   const edgePositions: number[] = []
@@ -216,37 +211,46 @@ function createPanel(design: Design, plan: CutPlan, bend: number, showCuts: bool
       faceUVs.push(point.x / 360, point.y / 360)
     }
   }
-  faces.forEach(([a, b, c]) => {
-    pushSurfaceTriangle(flatVertices[a], flatVertices[b], flatVertices[c], 1)
-    pushSurfaceTriangle(flatVertices[a], flatVertices[b], flatVertices[c], -1)
-  })
-  const addWalls = (polygon: Point[], positions: number[], uvs: number[]) => {
-    let distance = 0
-    for (let index = 0; index < polygon.length; index++) {
-      const a = polygon[index]
-      const b = polygon[(index + 1) % polygon.length]
-      const length = Math.hypot(b.x - a.x, b.y - a.y)
-      const steps = Math.max(1, Math.ceil(Math.abs(b.x - a.x) / maximumStep))
-      for (let step = 0; step < steps; step++) {
-        const start = step / steps
-        const end = (step + 1) / steps
-        const p = { x: a.x + (b.x - a.x) * start, y: a.y + (b.y - a.y) * start }
-        const q = { x: a.x + (b.x - a.x) * end, y: a.y + (b.y - a.y) * end }
-        const pFront = mapped(p, 1),
-          pBack = mapped(p, -1),
-          qFront = mapped(q, 1),
-          qBack = mapped(q, -1)
-        positions.push(...pFront, ...pBack, ...qFront, ...qFront, ...pBack, ...qBack)
-        const u = (distance + length * start) / 64,
-          v = (distance + length * end) / 64
-        uvs.push(u, 1, u, 0, v, 1, v, 1, u, 0, v, 0)
-      }
-      distance += length
-    }
+  for (const polygon of surface.polygons) {
+    const contour = polygon.contour.map((point) => new THREE.Vector2(point.x, point.y))
+    const holes = polygon.holes.map((ring) =>
+      ring.map((point) => new THREE.Vector2(point.x, point.y)),
+    )
+    const faces = THREE.ShapeUtils.triangulateShape(contour, holes)
+    const flatVertices = [...contour, ...holes.flat()]
+    faces.forEach(([a, b, c]) => {
+      pushSurfaceTriangle(flatVertices[a], flatVertices[b], flatVertices[c], 1)
+      pushSurfaceTriangle(flatVertices[a], flatVertices[b], flatVertices[c], -1)
+    })
   }
-  addWalls(plan.outline, edgePositions, edgeUVs)
-  holes.forEach((hole) => addWalls(hole, cutPositions, cutUVs))
+  let perimeterDistance = 0
+  for (const { start: a, end: b, kind } of surface.boundaries) {
+    const positions = kind === 'outer' ? edgePositions : cutPositions
+    const uvs = kind === 'outer' ? edgeUVs : cutUVs
+    const length = Math.hypot(b.x - a.x, b.y - a.y)
+    const steps = Math.max(1, Math.ceil(Math.abs(b.x - a.x) / maximumStep))
+    for (let step = 0; step < steps; step++) {
+      const start = step / steps
+      const end = (step + 1) / steps
+      const p = { x: a.x + (b.x - a.x) * start, y: a.y + (b.y - a.y) * start }
+      const q = { x: a.x + (b.x - a.x) * end, y: a.y + (b.y - a.y) * end }
+      const pFront = mapped(p, 1),
+        pBack = mapped(p, -1),
+        qFront = mapped(q, 1),
+        qBack = mapped(q, -1)
+      positions.push(...pFront, ...pBack, ...qFront, ...qFront, ...pBack, ...qBack)
+      const u = (perimeterDistance + length * start) / 64,
+        v = (perimeterDistance + length * end) / 64
+      uvs.push(u, 1, u, 0, v, 1, v, 1, u, 0, v, 0)
+    }
+    perimeterDistance += length
+  }
   const addMesh = (positions: number[], uvs: number[], material: THREE.MeshStandardMaterial) => {
+    if (!positions.length) {
+      material.map?.dispose()
+      material.dispose()
+      return
+    }
     const geometry = new THREE.BufferGeometry()
     geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
     geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
@@ -301,6 +305,7 @@ function createPanel(design: Design, plan: CutPlan, bend: number, showCuts: bool
     group.add(new THREE.LineSegments(geometry, new THREE.LineBasicMaterial({ color: '#634425' })))
   }
   const bounds = new THREE.Box3().setFromObject(group)
+  if (bounds.isEmpty()) return group
   const center = bounds.getCenter(new THREE.Vector3())
   group.position.set(-center.x, -bounds.min.y, -center.z)
   return group
