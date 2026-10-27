@@ -1,4 +1,12 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { defaultDesign, segmentLength } from '../../lib/geometry'
 import { honeycombCell } from '../../lib/honeycomb'
 import { meanderCell, meanderRepeat } from '../../lib/meander'
@@ -6,7 +14,11 @@ import { familyPresets } from '../../lib/pattern-presets'
 import type { Design, Segment } from '../../lib/types'
 import { Button } from '../ui/button'
 import { Tooltip } from '../ui/tooltip'
-export function PatternDrawing({ pattern }: { pattern: Design['pattern'] }) {
+export const PatternDrawing = memo(function PatternDrawing({
+  pattern,
+}: {
+  pattern: Design['pattern']
+}) {
   if (pattern === 'meander') {
     const miniature = {
       ...defaultDesign,
@@ -90,7 +102,7 @@ export function PatternDrawing({ pattern }: { pattern: Design['pattern'] }) {
       })}
     </svg>
   )
-}
+})
 
 export function NumberField({
   label,
@@ -171,12 +183,41 @@ export function PercentageField({
   hint: string
 }) {
   const percentage = Number((value * 100).toFixed(4))
+  const [draft, setDraft] = useState<number | null>(null)
+  const pending = useRef<number | null>(null)
+  const frame = useRef<number | null>(null)
+  const change = useRef(onChange)
+  useLayoutEffect(() => {
+    change.current = onChange
+  }, [onChange])
+  const flush = useCallback(() => {
+    if (frame.current !== null) cancelAnimationFrame(frame.current)
+    frame.current = null
+    const next = pending.current
+    pending.current = null
+    if (next !== null) {
+      setDraft(null)
+      change.current(next / 100)
+    }
+  }, [])
+  useEffect(() => {
+    // Commit before the history listener ends a drag when the window loses focus.
+    window.addEventListener('blur', flush, true)
+    return () => {
+      window.removeEventListener('blur', flush, true)
+      if (frame.current !== null) cancelAnimationFrame(frame.current)
+    }
+  }, [flush])
   return (
     <div className="percentage-field">
       <NumberField
         label={label}
-        value={percentage}
-        onChange={(next) => onChange(next / 100)}
+        value={draft ?? percentage}
+        onChange={(next) => {
+          pending.current = next
+          setDraft(next)
+          flush()
+        }}
         min={min}
         max={max}
         step={0.01}
@@ -189,9 +230,18 @@ export function PercentageField({
         min={min}
         max={max}
         step={0.01}
-        value={percentage}
+        value={draft ?? percentage}
         onPointerDown={(event) => event.currentTarget.setPointerCapture(event.pointerId)}
-        onChange={(event) => onChange(Number(event.target.value) / 100)}
+        onChange={(event) => {
+          const next = Number(event.target.value)
+          setDraft(next)
+          pending.current = next
+          if (frame.current === null) frame.current = requestAnimationFrame(flush)
+        }}
+        // Flush before the window's pointer-up handler closes the undo group.
+        onPointerUp={flush}
+        onPointerCancel={flush}
+        onBlur={flush}
       />
       <p className="control-hint">{hint}</p>
     </div>
@@ -228,7 +278,7 @@ export function IconButton({
   )
 }
 
-export function PresetDrawing({ segments }: { segments: Segment[] }) {
+export const PresetDrawing = memo(function PresetDrawing({ segments }: { segments: Segment[] }) {
   const points: { x: number; y: number }[] = []
   let x = 0,
     y = 0,
@@ -269,4 +319,4 @@ export function PresetDrawing({ segments }: { segments: Segment[] }) {
       />
     </svg>
   )
-}
+})

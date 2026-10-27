@@ -1,17 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import {
-  createCutPlan,
-  defaultDesign,
-  exportBendPathSVG,
-  exportDXF,
-  exportSVG,
-  pathLength,
-  presets,
-  validateDesign,
-} from '../lib/geometry'
+import { defaultDesign, pathLength, presets, validateDesign } from '../lib/geometry'
 import { familyPresets } from '../lib/pattern-presets'
-import { exportTestSwatchesSVG, getTestSwatchSheetSize } from '../lib/test-swatches'
+import { getTestSwatchSheetSize } from '../lib/test-swatches'
 import type { Design, OutlineKind, Segment } from '../lib/types'
+import type { ExportFormat } from '../lib/geometry-jobs'
+import { useGeometry } from './useGeometry'
 type View = 'preview' | 'outline' | 'plan'
 // Keep the original key so existing projects migrate in place.
 const storageKey = 'bentwood.design.v1'
@@ -62,7 +55,13 @@ export function useStudio() {
     currentDesign.current = design
   }, [design])
   const pointerHistory = useRef({ active: false, recorded: false })
-  const plan = useMemo(() => createCutPlan(design), [design])
+  const { client, snapshot, displayDesign, updating, geometryError, retryGeometry } = useGeometry(
+    design,
+    showCuts,
+  )
+  const [exporting, setExporting] = useState(false)
+  const exportPending = useRef(false)
+  const plan = snapshot?.plan ?? null
   const swatchSize = useMemo(() => getTestSwatchSheetSize(design), [design])
   const isMeander = design.pattern === 'meander'
   const patternPresets =
@@ -224,39 +223,46 @@ export function useStudio() {
       if (request === svgImportRequest.current) setImportingSVG(false)
     }
   }
-  function exportFile(format: 'svg' | 'dxf') {
+  async function runExport(format: ExportFormat, suffix: string, type: string, message: string) {
+    if (exportPending.current || !client.current) return
+    exportPending.current = true
+    setExporting(true)
     try {
-      download(
-        format === 'svg' ? exportSVG(design) : exportDXF(design),
-        `${filename}.${format}`,
-        format === 'svg' ? 'image/svg+xml' : 'application/dxf',
-      )
-      setNotice(`${format.toUpperCase()} cut plan downloaded at 1:1 scale.`)
+      // Capture the exact design and filename at the click, even if editing continues.
+      const content = await client.current.export(design, format)
+      download(content, `${filename}${suffix}`, type)
+      setNotice(message)
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'The cut plan could not be exported.')
+      if (!(error instanceof Error && error.name === 'AbortError'))
+        setNotice(error instanceof Error ? error.message : 'The design could not be exported.')
+    } finally {
+      exportPending.current = false
+      setExporting(false)
     }
+  }
+  function exportFile(format: 'svg' | 'dxf') {
+    void runExport(
+      format,
+      `.${format}`,
+      format === 'svg' ? 'image/svg+xml' : 'application/dxf',
+      `${format.toUpperCase()} cut plan downloaded at 1:1 scale.`,
+    )
   }
   function exportBendPath() {
-    try {
-      download(exportBendPathSVG(design), `${filename}-bend-path.svg`, 'image/svg+xml')
-      setNotice('Bend path SVG downloaded at 1:1 scale.')
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'The bend path could not be exported.')
-    }
+    void runExport(
+      'bend-path',
+      '-bend-path.svg',
+      'image/svg+xml',
+      'Bend path SVG downloaded at 1:1 scale.',
+    )
   }
   function exportTestSwatches() {
-    try {
-      download(
-        exportTestSwatchesSVG(design),
-        `${filename}-${design.pattern}-test-swatches.svg`,
-        'image/svg+xml',
-      )
-      setNotice(
-        'Test swatches downloaded at 1:1 scale. Set the labels layer to engrave in your laser software.',
-      )
-    } catch (error) {
-      setNotice(error instanceof Error ? error.message : 'The test swatches could not be exported.')
-    }
+    void runExport(
+      'swatches',
+      `-${design.pattern}-test-swatches.svg`,
+      'image/svg+xml',
+      'Test swatches downloaded at 1:1 scale. Set the labels layer to engrave in your laser software.',
+    )
   }
   return {
     history,
@@ -291,6 +297,13 @@ export function useStudio() {
     importingSVG,
     pointerHistory,
     plan,
+    geometry: snapshot?.geometry ?? null,
+    displayDesign,
+    previewShowCuts: snapshot?.showCuts ?? showCuts,
+    updating,
+    geometryError,
+    retryGeometry,
+    exporting,
     swatchSize,
     isMeander,
     patternPresets,

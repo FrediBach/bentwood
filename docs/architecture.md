@@ -12,8 +12,10 @@ and the root [AGENTS.md](../AGENTS.md) for contributor instructions.
 
 The application is a React 19 and TypeScript SPA built with Vite. It runs entirely in the
 browser: there is no backend, account system, database, cloud synchronization, or client-side
-router. Geometry generation, SVG parsing, and mesh construction run on the main thread.
-Browser `localStorage` holds the current design; project files provide portable backups.
+router. Cut generation, polygon subtraction, mesh triangulation/subdivision, and manufacturing
+exports run in a module Web Worker. Input validation, detached SVG parsing, mesh deformation,
+and GPU rendering remain on the main thread. Browser `localStorage` holds the current design;
+project files provide portable backups.
 
 ```mermaid
 flowchart TD
@@ -22,16 +24,18 @@ flowchart TD
   UI[Studio controls and editors] -->|update / patch| State
   SVG[SVG file] --> Import[importSVGOutline]
   Import -->|validated custom outline| State
-  State -->|Design| Plan[createCutPlan]
+  State -->|latest queued Design| Worker[Geometry worker]
+  Worker --> Plan[createCutPlan]
   Plan --> Flat[Cut-plan views]
   State --> Outline[OutlineEditor: shared outline helpers]
-  Plan --> Preview[PlywoodPreview]
-  Preview --> Surface[createPanelSurface: subtract kerfs and cutouts]
-  Surface --> Mesh[Three.js mesh and materials]
+  Plan --> Surface[Worker: subtract kerfs and cutouts]
+  Surface --> Topology[Worker: triangulate and subdivide]
+  Topology --> Preview[PlywoodPreview: deform reusable buffers]
+  Preview --> Mesh[Three.js mesh and materials]
   State --> Save[Local storage and project download]
-  State --> Export[SVG / DXF / test swatch export]
+  State -->|snapshot at download click| Export[Worker: SVG / DXF / test swatch export]
   Export -->|createExportPlan regenerates and checks| Plan
-  State --> Bend[Separate bend-path SVG export]
+  State --> Bend[Worker: separate bend-path SVG export]
 ```
 
 `Design` is the shared input. `CutPlan` is derived data, not another editable or persisted
@@ -61,6 +65,14 @@ fully bent segments directly and is independent of hinge-pattern clearance check
 | [`src/lib/wood-materials.ts`](../src/lib/wood-materials.ts), [`src/lib/wood-texture.ts`](../src/lib/wood-texture.ts)                                | Material identifiers and labels; deterministic procedural grain and appearance settings.                                                                     |
 | [`src/components/ui/`](../src/components/ui/), [`src/styles.css`](../src/styles.css), [`src/components/editors.css`](../src/components/editors.css) | Local Radix/shadcn-style primitives, Tailwind integration, workspace styling, responsive panels, and editor styling.                                         |
 
+The asynchronous geometry boundary lives in [`useGeometry.ts`](../src/hooks/useGeometry.ts),
+[`geometry-client.ts`](../src/lib/geometry-client.ts), and
+[`geometry.worker.ts`](../src/lib/geometry.worker.ts).
+[`geometry-jobs.ts`](../src/lib/geometry-jobs.ts) defines messages and cache keys;
+[`geometry-processor.ts`](../src/lib/geometry-processor.ts) owns worker-local caches and dispatch.
+[`preview-geometry.ts`](../src/lib/preview-geometry.ts) owns flat mesh topology and the pure
+buffer-deformation helper. `PlywoodPreview` retains all Three.js resource lifecycle ownership.
+
 ## Design state and persistence
 
 `useStudio` stores `{ past, present, future }`, with `present` as the current `Design`.
@@ -71,8 +83,22 @@ continuous changes into a single undo step; pointer-up, pointer-cancel, and wind
 the group.
 
 Camera, unfold amount, active view, selected segment, mobile panel, dialogs, and notices
-are transient hook state. They are absent from project files and undo snapshots. The plan
-and swatch dimensions are memoized from the design.
+are transient hook state. They are absent from project files and undo snapshots. Swatch
+dimensions are memoized; `useGeometry` owns asynchronous plan/mesh snapshots.
+
+Numeric text fields commit on blur/Enter; percentage sliders display input immediately and
+coalesce design commits per animation frame, flushing before pointer-up closes the undo group.
+`useGeometry` lets input paint and coalesces geometry requests for 60 ms. `GeometryClient`
+runs one job at a time, retains only the newest queued preview, and prioritizes downloads
+between jobs. Superseded queued work is removed immediately; in-flight stale results are
+ignored. Existing previews keep their matching design snapshot until a complete replacement
+arrives, with an updating indicator. Naming and material changes bypass geometry processing.
+
+The worker caches one cut plan and at most two mesh variants (cuts visible/hidden). Thickness
+changes refresh warnings while retaining flat topology. Typed mesh buffers are copied in the
+worker and transferred to the UI, preserving the bounded cache. Errors leave editing and the
+last complete preview available, with a retry action. Worker cleanup rejects pending requests
+and terminates the worker, including under Strict Mode.
 
 The persisted schema is `Design.version: 4`. It contains the project name, straight/arc
 segments, outline settings, material and thickness, nominal kerf, pattern family, and
@@ -166,8 +192,9 @@ parts of plan generation inspect warning substrings such as `laser kerf`, `50,00
 | Detailed preview kerfs  | At most 2,500 cuts and 20,000 segments; larger plans use surface centre lines.                                          |
 | SVG parsing             | At most 5,000 elements, nesting depth 64, 4,096 curves, and 8,192 flattening samples before the 128-point editor limit. |
 
-Exact numeric field ranges live in `validateDesign`. These limits matter because geometry
-work is synchronous. The preview's lower detail budget never reduces exported toolpaths.
+Exact numeric field ranges live in `validateDesign`. These limits bound CPU and memory use
+in both the main thread and worker. The preview's lower detail budget never reduces exported
+toolpaths.
 
 ## 3D preview lifecycle
 
@@ -176,8 +203,8 @@ demand after model, camera, control, or size changes. It cleans up controls, lis
 observers, geometries, materials, textures, and the renderer when replaced or unmounted;
 the lifecycle must tolerate React Strict Mode.
 
-`createPanelSurface` subtracts nominal cutouts and kerf footprints from the flat outline
-before triangulation. The surviving contours and holes form the two panel faces; classified
+`createPreviewGeometry` runs `createPanelSurface` in the worker to subtract nominal cutouts
+and kerf footprints from the flat outline before triangulation and subdivision. The surviving contours and holes form the two panel faces; classified
 boundaries form layered exterior walls and dark kerf walls. This keeps edge-reaching cuts
 open through the panel's thickness. Polygon subtraction retries with narrowly scoped
 coordinate snapping when coincident boundaries cause numerical trouble.
@@ -186,8 +213,11 @@ Unfolding scales arc angles by the bend fraction and inversely scales radii, pre
 neutral-axis length. At zero bend, arcs become straight segments of the same length. UVs
 come from flat sheet coordinates, keeping procedural grain attached to the material.
 
-Flat surfaces are cached by `CutPlan` identity and kerf; grain canvases are cached by material.
-When detailed cuts exceed the preview budget, all cuts are shown as centre lines. Honeycomb
+Flat topology is cached in the worker independently of material, thickness, and unfold amount.
+The preview reuses GPU buffers and materials while unfolding, updates positions/normals in place,
+and coalesces rendering into animation frames. Prepared path samplers precompute segment poses
+and use binary search; each deformation shares samples and normals across equal sheet X values.
+Grain canvases are cached by material. When detailed cuts exceed the preview budget, all cuts are shown as centre lines. Honeycomb
 voids can still be subtracted if their separate cutout budget permits. The UI labels the
 simplification. A WebGL initialization failure shows a fallback message while 2D editing
 and exports remain available.
@@ -217,8 +247,10 @@ preventing a stale SVG result from overwriting a newer import or an intervening 
 
 Laser exports contain tool centre lines with **no kerf compensation**. Nominal kerf affects
 checks and the rendered removed material, not offsets in the exported toolpaths. Preview
-appearance and unfolding never change manufacturing dimensions. Downloads use Blob URLs
-that are revoked after the browser starts the download.
+appearance and unfolding never change manufacturing dimensions. Downloads snapshot the design
+and filename at the click, then generate files in the worker
+independently of a pending preview. Duplicate clicks are disabled during generation. Downloads
+use Blob URLs that are revoked after the browser starts the download.
 
 ## Build, deployment, and verification
 

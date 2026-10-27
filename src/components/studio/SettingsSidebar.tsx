@@ -60,6 +60,9 @@ export function SettingsSidebar({
   setView,
   setMobilePanel,
   plan,
+  displayDesign,
+  updating,
+  exporting,
 }: {
   design: Design
   patch: (next: Partial<Design>) => void
@@ -70,7 +73,10 @@ export function SettingsSidebar({
   swatchSize: { width: number; height: number }
   setView: React.Dispatch<React.SetStateAction<View>>
   setMobilePanel: React.Dispatch<React.SetStateAction<'design' | 'studio' | 'settings'>>
-  plan: CutPlan
+  plan: CutPlan | null
+  displayDesign: Design | null
+  updating: boolean
+  exporting: boolean
 }) {
   const materialIndex = woodMaterials.findIndex((material) => material.id === design.material)
   const material = woodMaterials[materialIndex]
@@ -181,12 +187,6 @@ export function SettingsSidebar({
               onPointerDownCapture={() => {
                 pointerHistory.current = { active: true, recorded: false }
               }}
-              onPointerUpCapture={() => {
-                pointerHistory.current.active = false
-              }}
-              onPointerCancelCapture={() => {
-                pointerHistory.current.active = false
-              }}
             >
               {design.pattern === 'honeycomb' ? (
                 <>
@@ -250,6 +250,7 @@ export function SettingsSidebar({
             variant="outline"
             size="sm"
             onClick={exportTestSwatches}
+            disabled={exporting}
             aria-label="Download test swatches SVG"
           >
             <ArrowDownToLine size={15} /> Test swatches · SVG
@@ -261,7 +262,7 @@ export function SettingsSidebar({
           </p>
         </div>
       </section>
-      <section className="cut-summary">
+      <section className="cut-summary" aria-busy={updating}>
         <div className="section-label">
           <span>YOUR CUT PLAN</span>
           <button
@@ -274,39 +275,44 @@ export function SettingsSidebar({
             <MoveUpRight size={16} />
           </button>
         </div>
-        <button
-          className="cut-thumbnail"
-          onClick={() => {
-            setView('plan')
-            setMobilePanel('studio')
-          }}
-          aria-label="Open cut plan preview"
-        >
-          <CutPlanView design={design} plan={plan} large={false} />
-        </button>
-        <dl>
-          <div>
-            <dt>Sheet size</dt>
-            <dd>
-              {plan.length.toFixed(1)} × {plan.width.toFixed(1)} <small>mm</small>
-            </dd>
-          </div>
-          <div>
-            <dt>Hinge cuts</dt>
-            <dd>{plan.cuts.length}</dd>
-          </div>
-          <div>
-            <dt>Total cut length</dt>
-            <dd>
-              {(plan.cutLength / 1000).toFixed(2)} <small>m</small>
-            </dd>
-          </div>
-        </dl>
+        {updating && <p className="control-hint">Updating cut plan…</p>}
+        {plan && displayDesign && (
+          <>
+            <button
+              className="cut-thumbnail"
+              onClick={() => {
+                setView('plan')
+                setMobilePanel('studio')
+              }}
+              aria-label="Open cut plan preview"
+            >
+              <CutPlanView design={displayDesign} plan={plan} large={false} />
+            </button>
+            <dl>
+              <div>
+                <dt>Sheet size</dt>
+                <dd>
+                  {plan.length.toFixed(1)} × {plan.width.toFixed(1)} <small>mm</small>
+                </dd>
+              </div>
+              <div>
+                <dt>Hinge cuts</dt>
+                <dd>{plan.cuts.length}</dd>
+              </div>
+              <div>
+                <dt>Total cut length</dt>
+                <dd>
+                  {(plan.cutLength / 1000).toFixed(2)} <small>m</small>
+                </dd>
+              </div>
+            </dl>
+          </>
+        )}
       </section>
-      <div className={`material-note ${plan.warnings.length ? 'has-warning' : ''}`}>
+      <div className={`material-note ${!updating && plan?.warnings.length ? 'has-warning' : ''}`}>
         <CircleHelp size={16} />
         <p>
-          {plan.warnings[0] ||
+          {(updating ? 'Checking the updated design…' : plan?.warnings[0]) ||
             'Wood has a little personality. Test a small hinge in your material before the final cut.'}
         </p>
       </div>

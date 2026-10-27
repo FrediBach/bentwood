@@ -9,6 +9,9 @@ export function StudioDialogs({
   setExportOpen,
   design,
   plan,
+  displayDesign,
+  updating,
+  exporting,
   exportFile,
   exportBendPath,
   helpOpen,
@@ -17,7 +20,10 @@ export function StudioDialogs({
   exportOpen: boolean
   setExportOpen: React.Dispatch<React.SetStateAction<boolean>>
   design: Design
-  plan: CutPlan
+  plan: CutPlan | null
+  displayDesign: Design | null
+  updating: boolean
+  exporting: boolean
   exportFile: (format: 'svg' | 'dxf') => void
   exportBendPath: () => void
   helpOpen: boolean
@@ -35,23 +41,30 @@ export function StudioDialogs({
             Export your laser cut plan or bend path at 1:1 scale in millimetres. Import without
             scaling.
           </DialogDescription>
-          <div className="export-preview">
-            <CutPlanView design={design} plan={plan} large={false} />
+          <div className="export-preview" aria-busy={updating}>
+            {plan && displayDesign && (
+              <CutPlanView design={displayDesign} plan={plan} large={false} />
+            )}
           </div>
-          <div className="export-stats">
-            <span>
-              <strong>
-                {plan.length.toFixed(1)} × {plan.width.toFixed(1)}
-              </strong>
-              mm sheet size
-            </span>
-            <span>
-              <strong>{plan.cuts.length}</strong>hinge cuts
-            </span>
-            <span>
-              <strong>{design.thickness}</strong>mm plywood
-            </span>
-          </div>
+          {updating && (
+            <p className="control-hint">Updating preview. Downloads use your latest settings.</p>
+          )}
+          {plan && (
+            <div className="export-stats">
+              <span>
+                <strong>
+                  {plan.length.toFixed(1)} × {plan.width.toFixed(1)}
+                </strong>
+                mm sheet size
+              </span>
+              <span>
+                <strong>{plan.cuts.length}</strong>hinge cuts
+              </span>
+              <span>
+                <strong>{design.thickness}</strong>mm plywood
+              </span>
+            </div>
+          )}
           <div className="export-note">
             <strong>Before you cut</strong>
             <p>
@@ -60,7 +73,7 @@ export function StudioDialogs({
               in your cutter software. Test a material sample first; this preview does not simulate
               strength or springback.
             </p>
-            {plan.warnings.length > 0 && (
+            {!updating && plan && plan.warnings.length > 0 && (
               <ul>
                 {plan.warnings.map((warning) => (
                   <li key={warning}>{warning}</li>
@@ -68,12 +81,17 @@ export function StudioDialogs({
               </ul>
             )}
           </div>
-          <div className="dialog-actions">
-            <Button variant="outline" onClick={() => exportFile('dxf')}>
+          {exporting && (
+            <p className="control-hint" aria-live="polite">
+              Preparing download…
+            </p>
+          )}
+          <div className="dialog-actions" aria-busy={exporting}>
+            <Button variant="outline" disabled={exporting} onClick={() => exportFile('dxf')}>
               <ArrowDownToLine size={16} />
               Download DXF
             </Button>
-            <Button onClick={() => exportFile('svg')}>
+            <Button disabled={exporting} onClick={() => exportFile('svg')}>
               <ArrowDownToLine size={16} />
               Download SVG
             </Button>
@@ -86,7 +104,12 @@ export function StudioDialogs({
               width, fit allowance, and depth in your router software for your {design.thickness} mm
               plywood.
             </p>
-            <Button variant="outline" className="full-width" onClick={exportBendPath}>
+            <Button
+              variant="outline"
+              className="full-width"
+              disabled={exporting}
+              onClick={exportBendPath}
+            >
               <ArrowDownToLine size={16} />
               Download bend path SVG
             </Button>

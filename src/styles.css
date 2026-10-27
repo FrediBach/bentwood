@@ -2291,3 +2291,34 @@ svg {
     display: none;
   }
 }
+.geometry-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #73675f;
+  font-size: 14px;
+}
+.geometry-status {
+  position: absolute;
+  top: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  max-width: 90%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+.geometry-status:not(:empty) {
+  padding: 7px 12px;
+  border: 1px solid #d8d0c8;
+  border-radius: 8px;
+  background: #fffdf5;
+  color: #5b4c41;
+}
+.geometry-status button {
+  text-decoration: underline;
+  white-space: nowrap;
+}

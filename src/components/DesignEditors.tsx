@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react'
+import { memo, useEffect, useId, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import {
   ArrowDownRight,
@@ -12,11 +12,11 @@ import {
 import type { CutPlan, Design, Point } from '../lib/types'
 import { cutPathData } from '../lib/cut-path'
 import {
+  createPathSampler,
   getOutline,
   getPanelWidth,
   isSimplePolygon,
   pathLength,
-  samplePath,
   segmentLength,
 } from '../lib/geometry'
 import './editors.css'
@@ -38,15 +38,21 @@ function CoordinateField({
   const format = (number: number) => String(Number(number.toFixed(2)))
   const [text, setText] = useState(() => format(value))
   const cancelled = useRef(false)
+  const edited = useRef(false)
   useEffect(() => {
+    edited.current = false
     setText(format(value))
   }, [value])
   const commit = () => {
     if (cancelled.current) {
       cancelled.current = false
+      edited.current = false
       setText(format(value))
       return
     }
+    // A rounded display is not an edit to the original imported coordinate.
+    if (!edited.current) return
+    edited.current = false
     const parsed = Number(text)
     if (!text.trim() || !Number.isFinite(parsed)) {
       setText(format(value))
@@ -69,7 +75,10 @@ function CoordinateField({
         max={max}
         step="any"
         value={text}
-        onChange={(event) => setText(event.target.value)}
+        onChange={(event) => {
+          edited.current = true
+          setText(event.target.value)
+        }}
         onBlur={commit}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
@@ -99,17 +108,20 @@ export function BendPathEditor({
   onChange: (design: Design) => void
 }) {
   const gridId = useId().replace(/:/g, '')
-  let distance = 0
-  const sections = design.segments.map((segment) => {
-    const length = segmentLength(segment)
-    const samples = Math.max(2, Math.ceil(length / 3))
-    const points = Array.from({ length: samples + 1 }, (_, index) =>
-      samplePath(design.segments, distance + (length * index) / samples),
-    )
-    distance += length
-    return { segment, points }
-  })
-  const points = sections.flatMap((section) => section.points)
+  const sections = useMemo(() => {
+    let distance = 0
+    const sample = createPathSampler(design.segments)
+    return design.segments.map((segment) => {
+      const length = segmentLength(segment)
+      const samples = Math.max(2, Math.ceil(length / 3))
+      const points = Array.from({ length: samples + 1 }, (_, index) =>
+        sample(distance + (length * index) / samples),
+      )
+      distance += length
+      return { segment, points, path: pointString(points) }
+    })
+  }, [design.segments])
+  const points = useMemo(() => sections.flatMap((section) => section.points), [sections])
   const minX = Math.min(0, ...points.map((point) => point.x))
   const minY = Math.min(0, ...points.map((point) => point.y))
   const maxX = Math.max(1, ...points.map((point) => point.x))
@@ -139,10 +151,10 @@ export function BendPathEditor({
           height={viewHeight}
           fill={`url(#${gridId})`}
         />
-        {sections.map(({ segment, points: sectionPoints }, index) => (
+        {sections.map(({ segment, points: sectionPoints, path }, index) => (
           <g key={segment.id}>
             <polyline
-              points={pointString(sectionPoints)}
+              points={path}
               fill="none"
               stroke={segment.id === selectedId ? '#4a3025' : '#9b928b'}
               strokeWidth={segment.id === selectedId ? 4 : 2.5}
@@ -150,7 +162,7 @@ export function BendPathEditor({
               strokeLinecap="round"
             />
             <polyline
-              points={pointString(sectionPoints)}
+              points={path}
               fill="none"
               stroke="transparent"
               strokeWidth="24"
@@ -340,7 +352,7 @@ export function OutlineEditor({
   const gridId = useId().replace(/:/g, '')
   const length = pathLength(design.segments)
   const width = getPanelWidth(design)
-  const outline = getOutline(design)
+  const outline = useMemo(() => getOutline(design), [design])
   const padding = Math.max(length, width) * 0.16
   const isCustom = design.outline === 'custom'
   const custom = design.customOutline
@@ -606,7 +618,7 @@ export function OutlineEditor({
   )
 }
 
-export function CutPlanView({
+export const CutPlanView = memo(function CutPlanView({
   design,
   plan,
   large = true,
@@ -700,4 +712,4 @@ export function CutPlanView({
       )}
     </div>
   )
-}
+})

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   createCutPlan,
+  createPathSampler,
   defaultDesign,
   exportDXF,
   exportSVG,
@@ -12,7 +13,7 @@ import {
   segmentLength,
   validateDesign,
 } from './geometry'
-import type { Design, Point, Segment } from './types'
+import type { CutLine, Design, Point, Segment } from './types'
 import { cutPathData, cutPathLength, getCutPoints } from './cut-path'
 import { createPanelSurface } from './panel-surface'
 import { woodMaterials } from './wood-materials'
@@ -47,6 +48,33 @@ function inside(point: Point, polygon: Point[]): boolean {
 }
 
 describe('neutral-axis path geometry', () => {
+  it('prepares exact samples for repeated, out-of-order positions and signed bends', () => {
+    const segments: Segment[] = Array.from({ length: 50 }, (_, i) =>
+      i % 3 === 0
+        ? { id: String(i), type: 'straight', length: 20 + i }
+        : { id: String(i), type: 'arc', radius: 30 + i, angle: i % 2 ? -83 : 127 },
+    )
+    const sample = createPathSampler(segments)
+    const length = pathLength(segments)
+    const positions = [-Infinity, -20, 0, length, length + 20, Infinity]
+    let end = 0
+    for (const segment of segments) {
+      end += segmentLength(segment)
+      positions.push(end - 0.000001, end, end + 0.00000001, end + 0.000001)
+    }
+    for (let i = 0; i < 500; i++) positions.push((length * ((i * 179) % 500)) / 500)
+    for (const position of positions) {
+      const expected = samplePath(segments, position)
+      const actual = sample(position)
+      expect(actual.x).toBeCloseTo(expected.x, 9)
+      expect(actual.y).toBeCloseTo(expected.y, 9)
+      expect(actual.angle).toBeCloseTo(expected.angle, 11)
+      expect(actual.s).toBe(expected.s)
+      expect(actual.curved).toBe(expected.curved)
+    }
+    expect(createPathSampler([])(10)).toEqual(samplePath([], 10))
+  })
+
   it('uses exact signed circular arcs with continuous tangent and true arc length', () => {
     const segments: Segment[] = [
       { id: 'a', type: 'straight', length: 20 },
@@ -296,6 +324,31 @@ describe('outlines and staggered hinges', () => {
     expect(createCutPlan(input).cuts).toHaveLength(0)
     expect(() => exportSVG(input)).toThrow('Fix the outline')
   })
+  it('detects distant edge crossings and contacts after sorting dense outline bounds', () => {
+    const points = Array.from({ length: 2048 }, (_, i) => ({
+      x: 500 * Math.cos((i * 2 * Math.PI) / 2048),
+      y: 200 * Math.sin((i * 2 * Math.PI) / 2048),
+    }))
+    expect(isSimplePolygon(points)).toBe(true)
+    expect(isSimplePolygon([...points].reverse())).toBe(true)
+    const crossing = [...points]
+    crossing[200] = points[1200]
+    crossing[1200] = points[200]
+    expect(isSimplePolygon(crossing)).toBe(false)
+    const touching = [...points]
+    touching[1200] = points[200]
+    expect(isSimplePolygon(touching)).toBe(false)
+    // Endpoint contacts within EPS still count, even when the bounds do not quite overlap.
+    expect(
+      isSimplePolygon([
+        { x: 0, y: 0 },
+        { x: 2, y: 0 },
+        { x: 2, y: 2 },
+        { x: 1, y: 0.00000001 },
+        { x: 0, y: 2 },
+      ]),
+    ).toBe(false)
+  })
   it('flags collision and impossible narrow ligament settings', () => {
     expect(
       createCutPlan(
@@ -316,6 +369,28 @@ describe('outlines and staggered hinges', () => {
 })
 
 describe('manufacturing export', () => {
+  it('counts open paths and the closing edge exactly once without changing their points', () => {
+    const triangle = [
+      { x: 0, y: 0 },
+      { x: 3, y: 0 },
+      { x: 3, y: 4 },
+    ]
+    const cases: [CutLine, number][] = [
+      [{ x: 2, y1: 8, y2: 1 }, 7],
+      [{ x: 2, y1: 8, y2: 1, closed: true }, 14],
+      [{ x: 0, y1: 0, y2: 4, points: triangle }, 7],
+      [{ x: 0, y1: 0, y2: 4, points: triangle, closed: true }, 12],
+      [{ x: 0, y1: 0, y2: 4, points: [...triangle, triangle[0]], closed: true }, 12],
+      [{ x: 0, y1: 0, y2: 0, points: [], closed: true }, 0],
+      [{ x: 0, y1: 0, y2: 0, points: [triangle[0]], closed: true }, 0],
+    ]
+    for (const [cut, length] of cases) {
+      const before = structuredClone(cut)
+      expect(cutPathLength(cut)).toBe(length)
+      expect(cut).toEqual(before)
+    }
+  })
+
   it('exports exact millimetre bounds and every hinge toolpath with Y increasing upwards', () => {
     const input = design({ name: 'A <test> & panel' })
     const plan = createCutPlan(input)

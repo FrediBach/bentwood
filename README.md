@@ -79,6 +79,7 @@ The desktop workspace stays within the viewport, with individual controls scroll
 ### Controls and saving
 
 - Drag the 3D preview to orbit, scroll to zoom, and use the camera menu for perspective, top, or front views. Focus the preview and use arrow keys to orbit, `+` / `−` to zoom, and `Home` to reset.
+- Controls respond immediately while detailed geometry updates in the background. The last complete preview stays visible with an updating indicator. Unfolding reuses the existing mesh, and downloads use the settings captured when you click, even while a preview is updating.
 - Focus an outline vertex and use arrow keys to move it; `Delete` / `Backspace` removes it when at least three vertices remain. Numeric coordinate fields offer precise editing.
 - `⌘/Ctrl Z` undoes, `⌘/Ctrl Shift Z` redoes, and `⌘/Ctrl S` downloads a project file.
 - The current design is saved automatically in browser `localStorage`. Version 4 stores the pattern family and its continuous shape parameters. Version 3 Small waves, Honeycomb, Fine meander, and Wide meander projects migrate to the corresponding family settings, retaining their shape parameters and dimensions. Material-clearance checks may leave unsafe edge cuts uncut. Other version 3 patterns are retained; version 1 and 2 projects migrate automatically to Classic. Version 1’s former edge margin is replaced with cuts that reach the outline. Use **Save project file** to keep a portable `.bentwood.json` backup and **Open project** to restore one.

@@ -123,6 +123,75 @@ export function samplePath(segments: Segment[], position: number): PathSample {
   return { x, y, angle, s, curved }
 }
 
+/** Precompute segment poses once when sampling the same path many times. */
+export function createPathSampler(segments: Segment[]): (position: number) => PathSample {
+  let length = 0
+  let x = 0
+  let y = 0
+  let angle = 0
+  const spans = segments.map((segment) => {
+    const size = segmentLength(segment)
+    const sin = Math.sin(angle)
+    const cos = Math.cos(angle)
+    const direction = segment.type === 'arc' ? Math.sign(segment.angle) || 1 : 0
+    const radius = segment.type === 'arc' ? segment.radius : 0
+    const span = {
+      start: length,
+      end: length + size,
+      size,
+      x,
+      y,
+      angle,
+      sin,
+      cos,
+      direction,
+      radius,
+    }
+    if (segment.type === 'straight') {
+      x += size * cos
+      y += size * sin
+    } else {
+      const turn = (size / radius) * direction
+      x += (radius / direction) * (Math.sin(angle + turn) - sin)
+      y += (radius / direction) * (cos - Math.cos(angle + turn))
+      angle += turn
+    }
+    length += size
+    return span
+  })
+  return (position) => {
+    const s = Math.max(0, Math.min(length, position))
+    if (!spans.length) return { x: 0, y: 0, angle: 0, s, curved: false }
+    let lower = 0
+    let upper = spans.length - 1
+    // At joins, retain samplePath's incoming tangent/curved flag and EPS tolerance.
+    while (lower < upper) {
+      const middle = (lower + upper) >>> 1
+      if (s - spans[middle].end <= EPS) upper = middle
+      else lower = middle + 1
+    }
+    const span = spans[lower]
+    const travel = Math.min(span.size, Math.max(0, s - span.start))
+    if (!span.direction)
+      return {
+        x: span.x + travel * span.cos,
+        y: span.y + travel * span.sin,
+        angle: span.angle,
+        s,
+        curved: false,
+      }
+    const turn = (travel / span.radius) * span.direction
+    const angle = span.angle + turn
+    return {
+      x: span.x + (span.radius / span.direction) * (Math.sin(angle) - span.sin),
+      y: span.y + (span.radius / span.direction) * (span.cos - Math.cos(angle)),
+      angle,
+      s,
+      curved: true,
+    }
+  }
+}
+
 export function getPanelWidth(design: Design): number {
   return design.outline === 'square' || design.outline === 'circle'
     ? pathLength(design.segments)
@@ -188,17 +257,38 @@ export function isSimplePolygon(points: Point[]): boolean {
   )
     return false
   let area = 0
+  const edges = []
   for (let i = 0; i < points.length; i++) {
     const a = points[i]
     const b = points[(i + 1) % points.length]
     if (distance(a, b) <= EPS) return false
     area += a.x * b.y - b.x * a.y
-    for (let j = i + 1; j < points.length; j++) {
-      if (j === i + 1 || (i === 0 && j === points.length - 1)) continue
-      if (segmentsIntersect(a, b, points[j], points[(j + 1) % points.length])) return false
+    edges.push({
+      a,
+      b,
+      index: i,
+      minX: Math.min(a.x, b.x),
+      maxX: Math.max(a.x, b.x),
+      minY: Math.min(a.y, b.y),
+      maxY: Math.max(a.y, b.y),
+    })
+  }
+  if (Math.abs(area) <= EPS) return false
+  // Rounded outlines can contain thousands of edges. Only test edge pairs with
+  // overlapping bounds; EPS keeps endpoint/collinearity checks unchanged.
+  edges.sort((a, b) => a.minX - b.minX)
+  for (let i = 0; i < edges.length; i++) {
+    const first = edges[i]
+    for (let j = i + 1; j < edges.length; j++) {
+      const second = edges[j]
+      if (second.minX > first.maxX + EPS) break
+      const separation = Math.abs(first.index - second.index)
+      if (separation === 1 || separation === points.length - 1) continue
+      if (second.minY > first.maxY + EPS || first.minY > second.maxY + EPS) continue
+      if (segmentsIntersect(first.a, first.b, second.a, second.b)) return false
     }
   }
-  return Math.abs(area) > EPS
+  return true
 }
 
 /**
@@ -352,9 +442,8 @@ function edgeOpenCuts(
 function pathOverlaps(segments: Segment[]): boolean {
   const length = pathLength(segments)
   const count = Math.min(320, Math.max(2, Math.ceil(length / 3)))
-  const points = Array.from({ length: count + 1 }, (_, i) =>
-    samplePath(segments, (length * i) / count),
-  )
+  const sample = createPathSampler(segments)
+  const points = Array.from({ length: count + 1 }, (_, i) => sample((length * i) / count))
   for (let i = 0; i < count; i++) {
     for (let j = i + 3; j < count; j++) {
       if (segmentsIntersect(points[i], points[i + 1], points[j], points[j + 1])) return true

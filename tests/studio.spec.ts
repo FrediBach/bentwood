@@ -767,6 +767,7 @@ test('parametric families preserve intermediate shapes through undo, saving and 
     'aria-pressed',
     'false',
   )
+  await expect(page.locator('.cut-summary')).toHaveAttribute('aria-busy', 'false')
   const honeycombPath = await closedCuts.first().getAttribute('d')
   expect(honeycombPath).not.toBe(diamondPath)
   expect(honeycombPath!.match(/L/g)!.length).toBeGreaterThan(4)
@@ -804,6 +805,7 @@ test('parametric families preserve intermediate shapes through undo, saving and 
     'false',
   )
   await page.getByRole('button', { name: 'Cut plan', exact: true }).click()
+  await expect(page.locator('.cut-summary')).toHaveAttribute('aria-busy', 'false')
   const meanderPath = await page
     .locator('.cut-plan-view [data-hinge-cut]')
     .first()

@@ -26,8 +26,15 @@ export function cutPathData(cut: CutLine): string {
 }
 
 export function cutPathLength(cut: CutLine): number {
-  const points = getCutPoints(cut)
-  return points
-    .slice(1)
-    .reduce((sum, p, i) => sum + Math.hypot(p.x - points[i].x, p.y - points[i].y), 0)
+  if (!cut.points) return Math.abs(cut.y2 - cut.y1) * (cut.closed ? 2 : 1)
+  const points = cut.points
+  let length = 0
+  for (let i = 1; i < points.length; i++)
+    length += Math.hypot(points[i].x - points[i - 1].x, points[i].y - points[i - 1].y)
+  if (cut.closed && points.length > 1) {
+    const first = points[0]
+    const last = points[points.length - 1]
+    length += Math.hypot(first.x - last.x, first.y - last.y)
+  }
+  return length
 }

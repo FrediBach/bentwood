@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { presets } from '../../lib/geometry'
 import type { CutPlan, Design } from '../../lib/types'
+import type { PreviewGeometry } from '../../lib/preview-geometry'
 import { CutPlanView, OutlineEditor } from '../DesignEditors'
 import PlywoodPreview from '../PlywoodPreview'
 import { IconButton, PresetDrawing } from './StudioControls'
@@ -20,6 +21,12 @@ export function StudioCanvas({
   view,
   design,
   plan,
+  geometry,
+  displayDesign,
+  previewShowCuts,
+  updating,
+  geometryError,
+  retryGeometry,
   bend,
   showGrid,
   showCuts,
@@ -38,7 +45,13 @@ export function StudioCanvas({
   pointerHistory: React.RefObject<{ active: boolean; recorded: boolean }>
   view: View
   design: Design
-  plan: CutPlan
+  plan: CutPlan | null
+  geometry: PreviewGeometry | null
+  displayDesign: Design | null
+  previewShowCuts: boolean
+  updating: boolean
+  geometryError: string
+  retryGeometry: () => void
   bend: number
   showGrid: boolean
   showCuts: boolean
@@ -84,13 +97,14 @@ export function StudioCanvas({
                 : 'Every cut, considered.'}
           </h2>
         </div>
-        {view === 'preview' ? (
+        {view === 'preview' && plan && geometry && displayDesign ? (
           <PlywoodPreview
-            design={design}
+            design={displayDesign}
             plan={plan}
+            geometry={geometry}
             bend={bend}
             showGrid={showGrid}
-            showCuts={showCuts}
+            showCuts={previewShowCuts}
             view={camera}
             resetKey={resetKey}
           />
@@ -101,9 +115,25 @@ export function StudioCanvas({
             onImportSVG={() => svgInput.current?.click()}
             importingSVG={importingSVG}
           />
+        ) : view === 'plan' && plan && displayDesign ? (
+          <CutPlanView design={displayDesign} plan={plan} large />
         ) : (
-          <CutPlanView design={design} plan={plan} large />
+          <div className="geometry-placeholder">Preparing your design…</div>
         )}
+        <div
+          className="geometry-status"
+          aria-live="polite"
+          data-geometry-state={geometryError ? 'error' : updating ? 'updating' : 'ready'}
+        >
+          {geometryError ? (
+            <>
+              <span>{geometryError}</span>
+              <button onClick={retryGeometry}>Retry preview</button>
+            </>
+          ) : updating ? (
+            <span>Updating design…</span>
+          ) : null}
+        </div>
         {view === 'preview' && (
           <>
             <div className="canvas-tools">

@@ -61,7 +61,8 @@ Report what ran and any failures or checks that could not run.
 - Preserve `validateDesign` as the project validation/migration boundary. Schema changes
   need corresponding types, defaults, migrations, and round-trip coverage. Keep the storage
   key `bentwood.design.v1` for existing users; its suffix is not the current schema version.
-- Retain file-size, polygon, cut-count, and toolpath-complexity guards. Geometry runs on the
+- Retain file-size, polygon, cut-count, and toolpath-complexity guards. Intensive plan, surface,
+  topology, and export work runs in the geometry worker; validation and rendering stay on the
   main thread. Preview simplification must not simplify exported files. Export gating and
   plan generation inspect warning text; audit those consumers when changing warning wording.
 - Keep SVG imports detached and restricted to supported geometry. Preserve stale-import

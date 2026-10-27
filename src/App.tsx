@@ -41,6 +41,13 @@ export default function App() {
     importingSVG,
     pointerHistory,
     plan,
+    geometry,
+    displayDesign,
+    previewShowCuts,
+    updating,
+    geometryError,
+    retryGeometry,
+    exporting,
     swatchSize,
     isMeander,
     patternPresets,
@@ -105,6 +112,12 @@ export default function App() {
             view={view}
             design={design}
             plan={plan}
+            geometry={geometry}
+            displayDesign={displayDesign}
+            previewShowCuts={previewShowCuts}
+            updating={updating}
+            geometryError={geometryError}
+            retryGeometry={retryGeometry}
             bend={bend}
             showGrid={showGrid}
             showCuts={showCuts}
@@ -132,6 +145,9 @@ export default function App() {
             setView={setView}
             setMobilePanel={setMobilePanel}
             plan={plan}
+            displayDesign={displayDesign}
+            updating={updating}
+            exporting={exporting}
           />
         </main>
         <footer className="status-bar">
@@ -174,6 +190,9 @@ export default function App() {
           setExportOpen={setExportOpen}
           design={design}
           plan={plan}
+          displayDesign={displayDesign}
+          updating={updating}
+          exporting={exporting}
           exportFile={exportFile}
           exportBendPath={exportBendPath}
           helpOpen={helpOpen}
