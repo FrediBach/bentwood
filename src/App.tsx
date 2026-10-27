@@ -10,6 +10,20 @@ import { useStudio } from './hooks/useStudio'
 export default function App() {
   const {
     history,
+    project,
+    activeSheet,
+    activeSheetId,
+    setActiveSheetId,
+    addSheet,
+    duplicateSheet,
+    removeSheet,
+    patchProjectName,
+    patchPlacement,
+    importProject,
+    previewSheets,
+    assemblyWarnings,
+    exportScope,
+    setExportScope,
     design,
     view,
     setView,
@@ -75,8 +89,15 @@ export default function App() {
     <TooltipProvider delayDuration={250}>
       <div className="app-shell">
         <StudioNavigation
-          design={design}
-          patch={patch}
+          assemblyWarnings={assemblyWarnings}
+          updating={updating}
+          project={project}
+          patchProjectName={patchProjectName}
+          activeSheetId={activeSheetId}
+          setActiveSheetId={setActiveSheetId}
+          addSheet={addSheet}
+          duplicateSheet={duplicateSheet}
+          removeSheet={removeSheet}
           saved={saved}
           undo={undo}
           history={history}
@@ -91,8 +112,16 @@ export default function App() {
           view={view}
           mobilePanel={mobilePanel}
         />
-        <main className={`workspace mobile-${mobilePanel}`}>
+        <main
+          id="sheet-workspace"
+          role="tabpanel"
+          aria-labelledby={`sheet-tab-${activeSheetId}`}
+          className={`workspace mobile-${mobilePanel}`}
+        >
           <DesignSidebar
+            key={`design-${activeSheetId}`}
+            activeSheet={activeSheet}
+            patchPlacement={patchPlacement}
             panel={panel}
             setPanel={setPanel}
             design={design}
@@ -116,6 +145,8 @@ export default function App() {
           />
 
           <StudioCanvas
+            activeSheetId={activeSheetId}
+            previewSheets={previewSheets}
             pointerHistory={pointerHistory}
             view={view}
             design={design}
@@ -143,6 +174,7 @@ export default function App() {
           />
 
           <SettingsSidebar
+            key={`settings-${activeSheetId}`}
             design={design}
             patch={patch}
             patternPresets={patternPresets}
@@ -177,10 +209,7 @@ export default function App() {
         </footer>
         <ProjectInputs
           fileInput={fileInput}
-          update={update}
-          setSelectedId={setSelectedId}
-          setResetKey={setResetKey}
-          setNotice={setNotice}
+          importProject={importProject}
           svgInput={svgInput}
           importOutline={importOutline}
         />
@@ -194,6 +223,11 @@ export default function App() {
           </div>
         )}
         <StudioDialogs
+          previewSheets={previewSheets}
+          project={project}
+          exportScope={exportScope}
+          setExportScope={setExportScope}
+          assemblyWarnings={assemblyWarnings}
           exportOpen={exportOpen}
           setExportOpen={setExportOpen}
           design={design}

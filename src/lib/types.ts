@@ -25,6 +25,10 @@ export type Design = {
   honeycombWidth: number
   meanderOverlap: number
 }
+/** Assembly coordinates in millimetres; rotation is degrees around the vertical Y axis. */
+export type SheetPlacement = { x: number; y: number; z: number; rotation: number }
+export type Sheet = { id: string; design: Design; placement: SheetPlacement }
+export type Project = { version: 5; name: string; sheets: Sheet[] }
 // Straight cuts retain a compact representation. For shaped cuts, x identifies
 // the column and points contains the actual, clipped laser centre line.
 export type CutLine = {

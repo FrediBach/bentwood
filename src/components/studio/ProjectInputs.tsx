@@ -1,20 +1,11 @@
-import { validateDesign } from '../../lib/geometry'
-import type { Design } from '../../lib/types'
-
 export function ProjectInputs({
   fileInput,
-  update,
-  setSelectedId,
-  setResetKey,
-  setNotice,
+  importProject,
   svgInput,
   importOutline,
 }: {
   fileInput: React.RefObject<HTMLInputElement | null>
-  update: (next: Design) => void
-  setSelectedId: React.Dispatch<React.SetStateAction<string | null>>
-  setResetKey: React.Dispatch<React.SetStateAction<number>>
-  setNotice: React.Dispatch<React.SetStateAction<string>>
+  importProject: (file: File) => Promise<void>
   svgInput: React.RefObject<HTMLInputElement | null>
   importOutline: (file: File) => Promise<void>
 }) {
@@ -26,21 +17,10 @@ export function ProjectInputs({
         type="file"
         accept=".json,.bentwood.json"
         aria-label="Import project file"
-        onChange={async (e) => {
-          const file = e.target.files?.[0]
-          if (!file) return
-          try {
-            if (file.size > 1_000_000) throw new Error('File is too large.')
-            const parsed = validateDesign(JSON.parse(await file.text()))
-            if (!parsed) throw new Error('This is not a valid Bentwood project.')
-            update(parsed)
-            setSelectedId(null)
-            setResetKey((k) => k + 1)
-            setNotice('Project opened.')
-          } catch (err) {
-            setNotice(err instanceof Error ? err.message : 'Could not open this project.')
-          }
-          e.target.value = ''
+        onChange={(event) => {
+          const file = event.currentTarget.files?.[0]
+          event.currentTarget.value = ''
+          if (file) void importProject(file)
         }}
       />
       <input

@@ -2,9 +2,39 @@ import { describe, expect, it } from 'vitest'
 import { createGeometryProcessor } from './geometry-processor'
 import { createCutPlan, defaultDesign, exportBendPathSVG, exportDXF, exportSVG } from './geometry'
 import { exportTestSwatchesSVG } from './test-swatches'
-import type { PreparedGeometry } from './geometry-jobs'
+import type { PreparedAssembly, PreparedGeometry } from './geometry-jobs'
+import { createProject, exportProject } from './project'
 
 describe('background geometry processing', () => {
+  it('prepares independently cached sheets and checks their fully bent placement', () => {
+    const process = createGeometryProcessor()
+    const project = createProject({
+      ...defaultDesign,
+      segments: [{ id: 'line', type: 'straight', length: 100 }],
+    })
+    project.sheets.push({
+      ...project.sheets[0],
+      id: 'second',
+      design: { ...project.sheets[0].design, material: 'walnut' },
+      placement: { x: 0, y: 0, z: 0, rotation: 0 },
+    })
+    const prepare = (showCuts = true) =>
+      process({ kind: 'prepare-assembly', project, showCuts }) as PreparedAssembly
+    const first = prepare()
+    expect(first.sheets).toHaveLength(2)
+    expect(first.sheets[0].geometry).toBe(first.sheets[1].geometry)
+    expect(first.intersections).toEqual([{ firstId: 'sheet-1', secondId: 'second' }])
+    project.sheets[1].placement.z = 50
+    const moved = prepare()
+    expect(moved.sheets[0].geometry).toBe(first.sheets[0].geometry)
+    expect(moved.intersections).toEqual([])
+    expect(prepare(false).intersections).toEqual([])
+    for (const format of ['svg', 'dxf', 'bend-path'] as const)
+      expect(process({ kind: 'export-project', project, format })).toBe(
+        exportProject(project, format),
+      )
+  })
+
   it('preserves exact cut geometry and caches appearance-independent topology', () => {
     const process = createGeometryProcessor()
     const prepare = (design = defaultDesign, showCuts = true) =>

@@ -23,7 +23,7 @@ const normalizedPolygon = [
 async function saveProject(page: Page) {
   const pending = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Save project file', exact: true }).click()
-  return JSON.parse(await readFile((await (await pending).path())!, 'utf8'))
+  return JSON.parse(await readFile((await (await pending).path())!, 'utf8')).sheets[0].design
 }
 
 async function dismissNotice(page: Page) {

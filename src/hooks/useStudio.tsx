@@ -3,18 +3,21 @@ import { defaultDesign, pathLength, presets, validateDesign } from '../lib/geome
 import { familyPresets } from '../lib/pattern-presets'
 import { convertSegmentType } from '../lib/segment-editing'
 import { getTestSwatchSheetSize } from '../lib/test-swatches'
-import type { Design, OutlineKind, Segment } from '../lib/types'
+import { createProject, defaultPlacement, MAX_SHEETS, validateProject } from '../lib/project'
+import type { Design, OutlineKind, Project, Segment, SheetPlacement } from '../lib/types'
 import type { ExportFormat } from '../lib/geometry-jobs'
 import { useGeometry } from './useGeometry'
 type View = 'preview' | 'outline' | 'plan'
+const initialSegment = (design: Design) =>
+  design.segments.find((segment) => segment.type === 'arc')?.id ?? design.segments[0].id
 // Keep the original key so existing projects migrate in place.
 const storageKey = 'bentwood.design.v1'
-function loadDesign() {
+function loadProject() {
   try {
     const stored = localStorage.getItem(storageKey)
-    return stored ? (validateDesign(JSON.parse(stored)) ?? defaultDesign) : defaultDesign
+    return stored ? (validateProject(JSON.parse(stored)) ?? createProject()) : createProject()
   } catch {
-    return defaultDesign
+    return createProject()
   }
 }
 function download(content: string, filename: string, type: string) {
@@ -27,15 +30,18 @@ function download(content: string, filename: string, type: string) {
 }
 export function useStudio() {
   const [history, setHistory] = useState(() => ({
-    past: [] as Design[],
-    present: loadDesign(),
-    future: [] as Design[],
+    past: [] as Project[],
+    present: loadProject(),
+    future: [] as Project[],
   }))
-  const design = history.present
+  const project = history.present
+  const [requestedSheetId, requestSheetId] = useState(() => project.sheets[0].id)
+  const activeSheet =
+    project.sheets.find((sheet) => sheet.id === requestedSheetId) ?? project.sheets[0]
+  const activeSheetId = activeSheet.id
+  const design = activeSheet.design
   const [view, setView] = useState<View>('preview')
-  const [requestedSelectedId, setSelectedId] = useState<string | null>(
-    () => design.segments.find((s) => s.type === 'arc')?.id ?? design.segments[0].id,
-  )
+  const [requestedSelectedId, setSelectedId] = useState<string | null>(() => initialSegment(design))
   const selectedId =
     requestedSelectedId === null || design.segments.some((s) => s.id === requestedSelectedId)
       ? requestedSelectedId
@@ -55,15 +61,27 @@ export function useStudio() {
   const svgInput = useRef<HTMLInputElement>(null)
   const [importingSVG, setImportingSVG] = useState(false)
   const svgImportRequest = useRef(0)
+  const projectImportRequest = useRef(0)
+  const currentProject = useRef(project)
   const currentDesign = useRef(design)
+  const currentSheetId = useRef(activeSheetId)
   useEffect(() => {
     currentDesign.current = design
-  }, [design])
+    currentProject.current = project
+    currentSheetId.current = activeSheetId
+  }, [design, project, activeSheetId])
   const pointerHistory = useRef({ active: false, recorded: false })
-  const { client, snapshot, displayDesign, updating, geometryError, retryGeometry } = useGeometry(
-    design,
-    showCuts,
-  )
+  const {
+    client,
+    snapshot,
+    displayDesign,
+    updating,
+    geometryError,
+    retryGeometry,
+    previewSheets,
+    assemblyWarnings,
+  } = useGeometry(project, activeSheetId, showCuts)
+  const [exportScope, setExportScope] = useState<'sheet' | 'project'>('sheet')
   const [exporting, setExporting] = useState(false)
   const exportPending = useRef(false)
   const plan = snapshot?.plan ?? null
@@ -75,19 +93,22 @@ export function useStudio() {
       : null
   const selected = design.segments.find((s) => s.id === selectedId)
   const total = pathLength(design.segments)
-  const filename = (design.name.trim() || 'bentwood-design')
-    .replace(/[^a-z0-9-]+/gi, '-')
-    .toLowerCase()
-  function update(next: Design) {
-    if (JSON.stringify(next) === JSON.stringify(design)) return true
-    if (!validateDesign(next)) {
+  const filename = (name: string) =>
+    (name.trim() || 'bentwood-design').replace(/[^a-z0-9-]+/gi, '-').toLowerCase()
+  function updateProject(next: Project) {
+    if (JSON.stringify(next) === JSON.stringify(project)) return true
+    if (!validateProject(next)) {
       setNotice(
-        'This design exceeds the supported size or cut density. Reduce dimensions or increase cut spacing.',
+        'This project exceeds the supported size or cut density. Reduce dimensions, sheet count, or increase cut spacing.',
       )
       return false
     }
     const group = pointerHistory.current.active && pointerHistory.current.recorded
     if (pointerHistory.current.active) pointerHistory.current.recorded = true
+    currentProject.current = next
+    currentDesign.current = (
+      next.sheets.find((sheet) => sheet.id === activeSheetId) ?? next.sheets[0]
+    ).design
     setHistory((h) =>
       JSON.stringify(next) === JSON.stringify(h.present)
         ? h
@@ -95,8 +116,108 @@ export function useStudio() {
     )
     return true
   }
+  function update(next: Design) {
+    return updateProject({
+      ...project,
+      sheets: project.sheets.map((sheet) =>
+        sheet.id === activeSheetId ? { ...sheet, design: next } : sheet,
+      ),
+    })
+  }
   function patch(next: Partial<Design>) {
     return update({ ...design, ...next })
+  }
+  function patchProjectName(name: string) {
+    updateProject({ ...project, name })
+  }
+  function patchPlacement(next: Partial<SheetPlacement>) {
+    return updateProject({
+      ...project,
+      sheets: project.sheets.map((sheet) =>
+        sheet.id === activeSheetId
+          ? { ...sheet, placement: { ...sheet.placement, ...next } }
+          : sheet,
+      ),
+    })
+  }
+  function setActiveSheetId(id: string) {
+    const sheet = project.sheets.find((sheet) => sheet.id === id)
+    if (!sheet) return
+    currentSheetId.current = id
+    currentDesign.current = sheet.design
+    pointerHistory.current.active = false
+    requestSheetId(id)
+    setSelectedId(initialSegment(sheet.design))
+  }
+  function insertSheet(copy: boolean) {
+    if (project.sheets.length >= MAX_SHEETS) return
+    const id = crypto.randomUUID()
+    const source = copy ? design : defaultDesign
+    let number = project.sheets.length + 1
+    while (project.sheets.some((sheet) => sheet.design.name === `Sheet ${number}`)) number++
+    const next = {
+      id,
+      design: {
+        ...source,
+        name: copy ? `${source.name.slice(0, 94)} copy` : `Sheet ${number}`,
+        segments: source.segments.map((segment) => ({ ...segment, id: crypto.randomUUID() })),
+        customOutline: source.customOutline.map((point) => ({ ...point })),
+      },
+      placement: { ...(copy ? activeSheet.placement : defaultPlacement) },
+    }
+    pointerHistory.current.active = false
+    if (updateProject({ ...project, sheets: [...project.sheets, next] })) {
+      currentSheetId.current = id
+      currentDesign.current = next.design
+      requestSheetId(id)
+      setSelectedId(initialSegment(next.design))
+      setNotice(
+        copy
+          ? 'Sheet duplicated. Adjust its position to separate it from the original.'
+          : 'Sheet added.',
+      )
+    }
+  }
+  function removeSheet(id: string) {
+    if (project.sheets.length === 1) return
+    const index = project.sheets.findIndex((sheet) => sheet.id === id)
+    if (index < 0) return
+    const sheets = project.sheets.filter((sheet) => sheet.id !== id)
+    pointerHistory.current.active = false
+    if (updateProject({ ...project, sheets }) && id === activeSheetId) {
+      const nextSheet = sheets[Math.min(index, sheets.length - 1)]
+      currentSheetId.current = nextSheet.id
+      currentDesign.current = nextSheet.design
+      requestSheetId(nextSheet.id)
+      setSelectedId(initialSegment(nextSheet.design))
+    }
+  }
+  function replaceProject(next: Project) {
+    pointerHistory.current.active = false
+    if (!updateProject(next)) return false
+    currentSheetId.current = next.sheets[0].id
+    currentDesign.current = next.sheets[0].design
+    requestSheetId(next.sheets[0].id)
+    setSelectedId(initialSegment(next.sheets[0].design))
+    setResetKey((key) => key + 1)
+    return true
+  }
+  async function importProject(file: File) {
+    const request = ++projectImportRequest.current
+    const previous = currentProject.current
+    const sheetId = currentSheetId.current
+    try {
+      if (file.size > 1_000_000) throw new Error('File is too large.')
+      const parsed = validateProject(JSON.parse(await file.text()))
+      if (request !== projectImportRequest.current) return
+      if (previous !== currentProject.current || sheetId !== currentSheetId.current)
+        throw new Error('The project changed during import. Please open the file again.')
+      if (!parsed) throw new Error('This is not a valid Bentwood project.')
+      if (replaceProject(parsed)) setNotice('Project opened.')
+    } catch (error) {
+      if (request === projectImportRequest.current)
+        setNotice(error instanceof Error ? error.message : 'Could not open this project.')
+    }
   }
   function undo() {
     setHistory((h) =>
@@ -126,17 +247,21 @@ export function useStudio() {
     }
   }, [])
   function saveProject() {
-    download(JSON.stringify(design, null, 2), `${filename}.bentwood.json`, 'application/json')
+    download(
+      JSON.stringify(project, null, 2),
+      `${filename(project.name)}.bentwood.json`,
+      'application/json',
+    )
     setNotice('Project file downloaded.')
   }
   useEffect(() => {
     try {
-      localStorage.setItem(storageKey, JSON.stringify(design))
+      localStorage.setItem(storageKey, JSON.stringify(project))
       setSaved(true)
     } catch {
       setSaved(false)
     }
-  }, [design])
+  }, [project])
   useEffect(() => {
     if (!notice) return
     const timer = setTimeout(() => setNotice(''), 5000)
@@ -230,6 +355,9 @@ export function useStudio() {
   }
   async function importOutline(file: File) {
     const request = ++svgImportRequest.current
+    const previousProject = currentProject.current
+    const previous = currentDesign.current
+    const sheetId = currentSheetId.current
     setImportingSVG(true)
     try {
       if (file.size > 1024 * 1024) throw new Error('Choose an SVG file smaller than 1 MB.')
@@ -237,10 +365,9 @@ export function useStudio() {
         file.text(),
         import('../lib/svg-outline'),
       ])
-      const previous = currentDesign.current
       const result = await importSVGOutline(source, pathLength(previous.segments))
       if (request !== svgImportRequest.current) return
-      if (previous !== currentDesign.current)
+      if (previousProject !== currentProject.current || sheetId !== currentSheetId.current)
         throw new Error('The design changed during import. Please import the SVG again.')
       const next: Design = {
         ...previous,
@@ -253,7 +380,7 @@ export function useStudio() {
         throw new Error(
           'This outline exceeds the supported panel size or cut density. Shorten the bend path or increase cut spacing, then import again.',
         )
-      update(next)
+      if (!update(next)) return
       setPanel('outline')
       setView('outline')
       setMobilePanel('studio')
@@ -276,8 +403,12 @@ export function useStudio() {
     setExporting(true)
     try {
       // Capture the exact design and filename at the click, even if editing continues.
-      const content = await client.current.export(design, format)
-      download(content, `${filename}${suffix}`, type)
+      const allSheets = exportScope === 'project' && format !== 'swatches'
+      const exportFilename = filename(allSheets ? project.name : design.name)
+      const content = allSheets
+        ? await client.current.exportProject(project, format)
+        : await client.current.export(design, format)
+      download(content, `${exportFilename}${allSheets ? '-all-sheets' : ''}${suffix}`, type)
       setNotice(message)
     } catch (error) {
       if (!(error instanceof Error && error.name === 'AbortError'))
@@ -313,6 +444,21 @@ export function useStudio() {
   }
   return {
     history,
+    project,
+    activeSheet,
+    activeSheetId,
+    setActiveSheetId,
+    addSheet: () => insertSheet(false),
+    duplicateSheet: () => insertSheet(true),
+    removeSheet,
+    patchProjectName,
+    patchPlacement,
+    replaceProject,
+    importProject,
+    previewSheets,
+    assemblyWarnings,
+    exportScope,
+    setExportScope,
     design,
     view,
     setView,

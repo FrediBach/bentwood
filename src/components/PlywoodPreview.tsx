@@ -3,6 +3,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
 import { createPreviewMapper, type PreviewGeometry, type PreviewMesh } from '@/lib/preview-geometry'
 import type { CutPlan, Design } from '@/lib/types'
+import type { PreparedSheet } from '@/lib/geometry-jobs'
 import { createWoodTexturePixels, woodAppearance } from '@/lib/wood-texture'
 
 type Props = {
@@ -14,6 +15,7 @@ type Props = {
   showCuts: boolean
   view: 'perspective' | 'top' | 'front'
   resetKey: number
+  sheets?: PreparedSheet[]
 }
 
 type PreviewContext = {
@@ -29,7 +31,7 @@ type PreviewContext = {
   fit: (view: Props['view']) => void
   hasModel: boolean
   modelRadius: number
-  panel: PreviewPanel | null
+  panels: Map<string, PreviewPanel>
   modelPending: boolean
 }
 
@@ -212,11 +214,6 @@ function updatePanel(panel: PreviewPanel, design: Design, bend: number) {
     part.geometry.computeBoundingBox()
     part.geometry.computeBoundingSphere()
   }
-  panel.group.position.set(0, 0, 0)
-  const bounds = new THREE.Box3().setFromObject(panel.group)
-  if (bounds.isEmpty()) return
-  const center = bounds.getCenter(new THREE.Vector3())
-  panel.group.position.set(-center.x, -bounds.min.y, -center.z)
 }
 
 export default function PlywoodPreview({
@@ -227,6 +224,7 @@ export default function PlywoodPreview({
   showCuts,
   view,
   resetKey,
+  sheets,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const contextRef = useRef<PreviewContext | null>(null)
@@ -336,7 +334,7 @@ export default function PlywoodPreview({
       render,
       hasModel: false,
       modelRadius: 1,
-      panel: null,
+      panels: new Map(),
       modelPending: true,
       fit: (nextView) => {
         if (context.bounds.isEmpty()) return
@@ -440,12 +438,46 @@ export default function PlywoodPreview({
     context.modelPending = true
     context.renderer.domElement.dataset.previewReady = 'false'
     const frame = requestAnimationFrame(() => {
-      if (context.panel?.source !== geometry) {
-        disposeGroup(context.model)
-        context.panel = createPanel(design, geometry)
-        context.model.add(context.panel.group)
+      const entries = sheets ?? [
+        {
+          id: 'single',
+          design,
+          geometry,
+          placement: { x: 0, y: 0, z: 0, rotation: 0 },
+        },
+      ]
+      context.renderer.domElement.dataset.sheetCount = String(entries.length)
+      const ids = new Set(entries.map((entry) => entry.id))
+      for (const [id, panel] of context.panels) {
+        if (!ids.has(id)) {
+          context.model.remove(panel.group)
+          disposeGroup(panel.group)
+          context.panels.delete(id)
+        }
       }
-      updatePanel(context.panel, design, bend)
+      context.model.position.set(0, 0, 0)
+      for (const entry of entries) {
+        let panel = context.panels.get(entry.id)
+        if (panel?.source !== entry.geometry) {
+          if (panel) {
+            context.model.remove(panel.group)
+            disposeGroup(panel.group)
+          }
+          panel = createPanel(entry.design, entry.geometry)
+          context.panels.set(entry.id, panel)
+          context.model.add(panel.group)
+        }
+        updatePanel(panel, entry.design, bend)
+        panel.group.position.set(entry.placement.x, entry.placement.y, entry.placement.z)
+        panel.group.rotation.y = THREE.MathUtils.degToRad(entry.placement.rotation)
+      }
+      context.model.updateMatrixWorld(true)
+      const assemblyBounds = new THREE.Box3().setFromObject(context.model)
+      if (!assemblyBounds.isEmpty()) {
+        const center = assemblyBounds.getCenter(new THREE.Vector3())
+        context.model.position.set(-center.x, -Math.min(0, assemblyBounds.min.y), -center.z)
+      }
+      context.model.updateMatrixWorld(true)
       context.bounds.setFromObject(context.model)
       if (!context.bounds.isEmpty()) {
         const size = context.bounds.getSize(new THREE.Vector3())
@@ -468,7 +500,7 @@ export default function PlywoodPreview({
       context.render()
     })
     return () => cancelAnimationFrame(frame)
-  }, [design, geometry, bend, ready, view])
+  }, [design, geometry, sheets, bend, ready, view])
 
   useEffect(() => {
     const context = contextRef.current
@@ -487,22 +519,24 @@ export default function PlywoodPreview({
       className="plywood-preview"
       style={{ width: '100%', height: '100%', position: 'relative' }}
     >
-      {showCuts && !geometry.detailedCuts && !error && (
-        <div
-          style={{
-            position: 'absolute',
-            left: 16,
-            bottom: 16,
-            fontSize: 12,
-            color: '#514841',
-            background: '#fbf6eae8',
-            padding: '6px 10px',
-            borderRadius: 6,
-          }}
-        >
-          Dense pattern: cuts shown as lines
-        </div>
-      )}
+      {showCuts &&
+        (sheets ? sheets.some((sheet) => !sheet.geometry.detailedCuts) : !geometry.detailedCuts) &&
+        !error && (
+          <div
+            style={{
+              position: 'absolute',
+              left: 16,
+              bottom: 84,
+              fontSize: 12,
+              color: '#514841',
+              background: '#fbf6eae8',
+              padding: '6px 10px',
+              borderRadius: 6,
+            }}
+          >
+            Dense pattern: cuts shown as lines
+          </div>
+        )}
       {error && (
         <div
           role="status"

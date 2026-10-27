@@ -1,16 +1,64 @@
 import { createCutPlan, exportBendPathSVG, exportDXF, exportSVG } from './geometry'
-import { geometryKey, topologyKey, type GeometryJob } from './geometry-jobs'
+import {
+  assemblyKey,
+  geometryKey,
+  topologyKey,
+  type GeometryJob,
+  type PreparedSheet,
+} from './geometry-jobs'
 import { createPreviewGeometry, type PreviewGeometry } from './preview-geometry'
+import { exportProject } from './project'
+import { findSheetIntersections, type IntersectionResult } from './sheet-intersections'
 import { exportTestSwatchesSVG } from './test-swatches'
-import type { CutPlan } from './types'
+import type { CutPlan, Design } from './types'
+
+const meshBytes = (geometry: PreviewGeometry) =>
+  [geometry.faces, geometry.edges, geometry.cuts].reduce(
+    (sum, mesh) =>
+      sum + mesh.vertices.byteLength + mesh.uvs.byteLength + mesh.sampleIndices.byteLength,
+    geometry.lines.byteLength +
+      geometry.lineSampleIndices.byteLength +
+      geometry.distances.byteLength,
+  )
 
 /** Worker-local, bounded caches. Manufacturing exports always use the full design. */
 export function createGeometryProcessor() {
-  let planKey = ''
-  let plan: CutPlan | undefined
-  let meshKey = ''
-  const meshes = new Map<boolean, PreviewGeometry>()
+  const plans = new Map<string, CutPlan>()
+  const meshes = new Map<string, PreviewGeometry>()
+  let cachedBytes = 0
+  let collisionKey = ''
+  let collisions: IntersectionResult = { intersections: [], warnings: [] }
+  const prepare = (design: Design, showCuts: boolean) => {
+    const planKey = geometryKey(design)
+    let plan = plans.get(planKey)
+    if (!plan) {
+      plan = createCutPlan(design)
+      plans.set(planKey, plan)
+      if (plans.size > 16) plans.delete(plans.keys().next().value!)
+    }
+    const meshKey = `${showCuts}:${topologyKey(design)}`
+    let geometry = meshes.get(meshKey)
+    if (!geometry) {
+      geometry = createPreviewGeometry(plan, design.kerf, showCuts)
+      const bytes = meshBytes(geometry)
+      // Large transient assemblies remain renderable without retaining their buffers twice.
+      if (bytes <= 64 * 1024 * 1024) {
+        while (meshes.size && (meshes.size >= 8 || cachedBytes + bytes > 64 * 1024 * 1024)) {
+          const oldest = meshes.keys().next().value!
+          cachedBytes -= meshBytes(meshes.get(oldest)!)
+          meshes.delete(oldest)
+        }
+        meshes.set(meshKey, geometry)
+        cachedBytes += bytes
+      }
+    } else {
+      meshes.delete(meshKey)
+      meshes.set(meshKey, geometry)
+    }
+    return { plan, geometry }
+  }
   return (job: GeometryJob) => {
+    if (job.kind === 'export-project') return exportProject(job.project, job.format)
     if (job.kind === 'export') {
       switch (job.format) {
         case 'svg':
@@ -23,21 +71,18 @@ export function createGeometryProcessor() {
           return exportTestSwatchesSVG(job.design)
       }
     }
-    const nextPlanKey = geometryKey(job.design)
-    if (!plan || planKey !== nextPlanKey) {
-      plan = createCutPlan(job.design)
-      planKey = nextPlanKey
+    if (job.kind === 'prepare-assembly') {
+      const sheets: PreparedSheet[] = job.project.sheets.map((sheet) => ({
+        ...sheet,
+        ...prepare(sheet.design, job.showCuts),
+      }))
+      const key = assemblyKey(job.project)
+      if (key !== collisionKey) {
+        collisions = findSheetIntersections(sheets)
+        collisionKey = key
+      }
+      return { sheets, ...collisions }
     }
-    const nextMeshKey = topologyKey(job.design)
-    if (meshKey !== nextMeshKey) {
-      meshes.clear()
-      meshKey = nextMeshKey
-    }
-    let geometry = meshes.get(job.showCuts)
-    if (!geometry) {
-      geometry = createPreviewGeometry(plan, job.design.kerf, job.showCuts)
-      meshes.set(job.showCuts, geometry)
-    }
-    return { plan, geometry }
+    return prepare(job.design, job.showCuts)
   }
 }

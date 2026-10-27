@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { GeometryClient } from './geometry-client'
 import { defaultDesign } from './geometry'
+import { createProject } from './project'
 import type { GeometryRequest, GeometryResponse } from './geometry-jobs'
 
 class FakeWorker {
@@ -19,6 +20,25 @@ const setup = () => {
 }
 
 describe('geometry worker scheduling', () => {
+  it('coalesces whole-assembly previews and prioritizes whole-project downloads', async () => {
+    const { worker, client } = setup()
+    const project = createProject()
+    const active = client.prepareAssembly(project, true)
+    const stale = client.prepareAssembly(project, false).catch((error) => error)
+    const latest = client.prepareAssembly(project, true)
+    const download = client.exportProject(project, 'svg')
+    expect((await stale).name).toBe('AbortError')
+    worker.respond({ id: 1, ok: true, result: { sheets: [], intersections: [], warnings: [] } })
+    await active
+    expect(worker.postMessage.mock.calls[1][0].job.kind).toBe('export-project')
+    worker.respond({ id: 4, ok: true, result: 'project export' })
+    await expect(download).resolves.toBe('project export')
+    expect(worker.postMessage.mock.calls[2][0].job.kind).toBe('prepare-assembly')
+    worker.respond({ id: 3, ok: true, result: { sheets: [], intersections: [], warnings: [] } })
+    await latest
+    client.dispose()
+  })
+
   it('discards a stale queued preview before a replacement finishes debouncing', async () => {
     const { worker, client } = setup()
     const active = client.prepare(defaultDesign, true)

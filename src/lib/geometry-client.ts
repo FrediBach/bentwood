@@ -3,11 +3,16 @@ import type {
   GeometryRequest,
   GeometryResponse,
   PreparedGeometry,
+  PreparedAssembly,
+  GeometryResult,
+  ExportFormat,
+  ProjectExportFormat,
 } from './geometry-jobs'
+import type { Design, Project } from './types'
 
 type Task = {
   request: GeometryRequest
-  resolve: (value: PreparedGeometry | string) => void
+  resolve: (value: GeometryResult) => void
   reject: (error: Error) => void
 }
 const cancelled = () => new DOMException('A newer design replaced this request.', 'AbortError')
@@ -26,25 +31,34 @@ export class GeometryClient {
       new Worker(new URL('./geometry.worker.ts', import.meta.url), { type: 'module' }),
   ) {}
 
-  prepare(design: GeometryJob['design'], showCuts: boolean) {
+  prepare(design: Design, showCuts: boolean) {
     return this.enqueue({ kind: 'prepare', design, showCuts }) as Promise<PreparedGeometry>
   }
 
-  export(
-    design: GeometryJob['design'],
-    format: Extract<GeometryJob, { kind: 'export' }>['format'],
-  ) {
+  export(design: Design, format: ExportFormat) {
     return this.enqueue({ kind: 'export', design, format }) as Promise<string>
   }
 
+  prepareAssembly(project: Project, showCuts: boolean) {
+    return this.enqueue({
+      kind: 'prepare-assembly',
+      project,
+      showCuts,
+    }) as Promise<PreparedAssembly>
+  }
+
+  exportProject(project: Project, format: ProjectExportFormat) {
+    return this.enqueue({ kind: 'export-project', project, format }) as Promise<string>
+  }
+
   private enqueue(job: GeometryJob) {
-    return new Promise<PreparedGeometry | string>((resolve, reject) => {
+    return new Promise<GeometryResult>((resolve, reject) => {
       if (this.disposed) {
         reject(cancelled())
         return
       }
       const task = { request: { id: ++this.sequence, job }, resolve, reject }
-      if (job.kind === 'prepare') {
+      if (job.kind === 'prepare' || job.kind === 'prepare-assembly') {
         this.preview?.reject(cancelled())
         this.preview = task
       } else this.downloads.push(task)

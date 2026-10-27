@@ -20,7 +20,7 @@ test('all woods render and retain their selection through save, reload and impor
   const saved = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Save project file', exact: true }).click()
   const file = await saved
-  const project = JSON.parse(await readFile((await file.path())!, 'utf8'))
+  const project = JSON.parse(await readFile((await file.path())!, 'utf8')).sheets[0].design
   expect(project.material).toBe('mahogany')
   await page.reload()
   await expect(selector).toHaveValue('mahogany')

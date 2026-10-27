@@ -11,6 +11,7 @@ import {
 } from 'lucide-react'
 import type { CutPlan, Design, Point } from '../lib/types'
 import { cutPathData } from '../lib/cut-path'
+import { layoutSheets } from '../lib/sheet-layout'
 import {
   createPathSampler,
   getOutline,
@@ -505,20 +506,27 @@ export function OutlineEditor({
             custom.map((point, index) => {
               const next = custom[(index + 1) % custom.length]
               return (
+                <line
+                  key={index}
+                  x1={point.x * length}
+                  y1={(1 - point.y) * width}
+                  x2={next.x * length}
+                  y2={(1 - next.y) * width}
+                  stroke="transparent"
+                  strokeWidth="16"
+                  vectorEffect="non-scaling-stroke"
+                  className="outline-edge-hit"
+                  onDoubleClick={() => insertPoint(index)}
+                >
+                  <title>Double-click to add a point</title>
+                </line>
+              )
+            })}
+          {/* Keep every vertex above every edge so closing edges cannot intercept a drag. */}
+          {isCustom &&
+            custom.map((point, index) => {
+              return (
                 <g key={index}>
-                  <line
-                    x1={point.x * length}
-                    y1={(1 - point.y) * width}
-                    x2={next.x * length}
-                    y2={(1 - next.y) * width}
-                    stroke="transparent"
-                    strokeWidth="16"
-                    vectorEffect="non-scaling-stroke"
-                    className="outline-edge-hit"
-                    onDoubleClick={() => insertPoint(index)}
-                  >
-                    <title>Double-click to add a point</title>
-                  </line>
                   <circle
                     cx={point.x * length}
                     cy={(1 - point.y) * width}
@@ -618,6 +626,84 @@ export function OutlineEditor({
   )
 }
 
+function CutPlanPaths({
+  design,
+  plan,
+  large = false,
+}: {
+  design: Design
+  plan: CutPlan
+  large?: boolean
+}) {
+  return (
+    <g transform={`translate(0 ${plan.width}) scale(1 -1)`}>
+      {design.outline === 'circle' || design.outline === 'ellipse' ? (
+        <ellipse
+          cx={plan.length / 2}
+          cy={plan.width / 2}
+          rx={plan.length / 2}
+          ry={plan.width / 2}
+          data-outline-contour=""
+          fill="#fffdf5"
+          stroke="#a8493f"
+          strokeWidth={large ? 1.6 : 1.2}
+          vectorEffect="non-scaling-stroke"
+        />
+      ) : (
+        <polygon
+          points={pointString(plan.outline)}
+          data-outline-contour=""
+          fill="#fffdf5"
+          stroke="#a8493f"
+          strokeWidth={large ? 1.6 : 1.2}
+          strokeLinejoin="round"
+          vectorEffect="non-scaling-stroke"
+        />
+      )}
+      <g stroke="#3c699a" strokeWidth={large ? 0.9 : 0.6} vectorEffect="non-scaling-stroke">
+        {plan.cuts.map((cut, index) => (
+          <path
+            key={index}
+            d={cutPathData(cut)}
+            fill="none"
+            data-hinge-cut=""
+            vectorEffect="non-scaling-stroke"
+          />
+        ))}
+      </g>
+    </g>
+  )
+}
+
+export const ProjectCutPlanView = memo(function ProjectCutPlanView({
+  name,
+  sheets,
+}: {
+  name: string
+  sheets: { id: string; design: Design; plan: CutPlan }[]
+}) {
+  const layout = layoutSheets(sheets)
+  const padding = Math.max(layout.length, layout.width) * 0.05
+  if (!sheets.length) return null
+  return (
+    <div className="cut-plan-thumbnail">
+      <svg
+        viewBox={`${-padding} ${-padding} ${layout.length + padding * 2} ${layout.width + padding * 2}`}
+        className="cut-plan-svg"
+        role="img"
+        aria-label={`${name} laser cut layout: ${sheets.length} sheets, ${mm(layout.length)} by ${mm(layout.width)} millimeters`}
+      >
+        {layout.sheets.map(({ sheet, x, y }) => (
+          <g key={sheet.id} data-export-sheet={sheet.id} transform={`translate(${x} ${y})`}>
+            <title>{sheet.design.name || 'Untitled sheet'}</title>
+            <CutPlanPaths design={sheet.design} plan={sheet.plan} />
+          </g>
+        ))}
+      </svg>
+    </div>
+  )
+})
+
 export const CutPlanView = memo(function CutPlanView({
   design,
   plan,
@@ -661,41 +747,7 @@ export const CutPlanView = memo(function CutPlanView({
           />
         )}
         {large && <DimensionLines length={plan.length} width={plan.width} padding={padding} />}
-        <g transform={`translate(0 ${plan.width}) scale(1 -1)`}>
-          {design.outline === 'circle' || design.outline === 'ellipse' ? (
-            <ellipse
-              cx={plan.length / 2}
-              cy={plan.width / 2}
-              rx={plan.length / 2}
-              ry={plan.width / 2}
-              fill="#fffdf5"
-              stroke="#a8493f"
-              strokeWidth={large ? 1.6 : 1.2}
-              vectorEffect="non-scaling-stroke"
-            />
-          ) : (
-            <polygon
-              points={pointString(plan.outline)}
-              data-outline-contour=""
-              fill="#fffdf5"
-              stroke="#a8493f"
-              strokeWidth={large ? 1.6 : 1.2}
-              strokeLinejoin="round"
-              vectorEffect="non-scaling-stroke"
-            />
-          )}
-          <g stroke="#3c699a" strokeWidth={large ? 0.9 : 0.6} vectorEffect="non-scaling-stroke">
-            {plan.cuts.map((cut, index) => (
-              <path
-                key={index}
-                d={cutPathData(cut)}
-                fill="none"
-                data-hinge-cut=""
-                vectorEffect="non-scaling-stroke"
-              />
-            ))}
-          </g>
-        </g>
+        <CutPlanPaths design={design} plan={plan} large={large} />
       </svg>
       {large && (
         <div className="cut-plan-legend">

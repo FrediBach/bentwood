@@ -11,6 +11,7 @@ import {
 import { presets } from '../../lib/geometry'
 import type { CutPlan, Design } from '../../lib/types'
 import type { PreviewGeometry } from '../../lib/preview-geometry'
+import type { PreparedSheet } from '../../lib/geometry-jobs'
 import { CutPlanView, OutlineEditor } from '../DesignEditors'
 import PlywoodPreview from '../PlywoodPreview'
 import { IconButton, PresetDrawing } from './StudioControls'
@@ -20,9 +21,11 @@ export function StudioCanvas({
   pointerHistory,
   view,
   design,
+  activeSheetId,
   plan,
   geometry,
   displayDesign,
+  previewSheets,
   previewShowCuts,
   updating,
   geometryError,
@@ -45,9 +48,11 @@ export function StudioCanvas({
   pointerHistory: React.RefObject<{ active: boolean; recorded: boolean }>
   view: View
   design: Design
+  activeSheetId: string
   plan: CutPlan | null
   geometry: PreviewGeometry | null
   displayDesign: Design | null
+  previewSheets: PreparedSheet[]
   previewShowCuts: boolean
   updating: boolean
   geometryError: string
@@ -102,6 +107,7 @@ export function StudioCanvas({
             design={displayDesign}
             plan={plan}
             geometry={geometry}
+            sheets={previewSheets}
             bend={bend}
             showGrid={showGrid}
             showCuts={previewShowCuts}
@@ -110,6 +116,7 @@ export function StudioCanvas({
           />
         ) : view === 'outline' ? (
           <OutlineEditor
+            key={activeSheetId}
             design={design}
             onChange={update}
             onImportSVG={() => svgInput.current?.click()}
@@ -171,7 +178,9 @@ export function StudioCanvas({
                 LIVE PREVIEW
               </span>
               <span>
-                {design.thickness} mm {design.material}
+                {previewSheets.length > 1
+                  ? `${previewSheets.length} sheets · ${design.name || 'Active sheet'}`
+                  : `${design.thickness} mm ${design.material}`}
               </span>
             </div>
             <div className="bend-control">

@@ -1,6 +1,8 @@
 import { ArrowDownToLine, ArrowRight, MoveUpRight, Scissors, Waves } from 'lucide-react'
-import type { CutPlan, Design } from '../../lib/types'
-import { CutPlanView } from '../DesignEditors'
+import type { CutPlan, Design, Project } from '../../lib/types'
+import type { PreparedSheet } from '../../lib/geometry-jobs'
+import { layoutSheets } from '../../lib/sheet-layout'
+import { CutPlanView, ProjectCutPlanView } from '../DesignEditors'
 import { Button } from '../ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '../ui/dialog'
 
@@ -8,6 +10,11 @@ export function StudioDialogs({
   exportOpen,
   setExportOpen,
   design,
+  project,
+  exportScope,
+  setExportScope,
+  assemblyWarnings,
+  previewSheets,
   plan,
   displayDesign,
   updating,
@@ -20,6 +27,11 @@ export function StudioDialogs({
   exportOpen: boolean
   setExportOpen: React.Dispatch<React.SetStateAction<boolean>>
   design: Design
+  project: Project
+  exportScope: 'sheet' | 'project'
+  setExportScope: React.Dispatch<React.SetStateAction<'sheet' | 'project'>>
+  assemblyWarnings: string[]
+  previewSheets: PreparedSheet[]
   plan: CutPlan | null
   displayDesign: Design | null
   updating: boolean
@@ -29,6 +41,21 @@ export function StudioDialogs({
   helpOpen: boolean
   setHelpOpen: React.Dispatch<React.SetStateAction<boolean>>
 }) {
+  const exportWarnings =
+    exportScope === 'project'
+      ? previewSheets.flatMap((sheet, index) =>
+          sheet.plan.warnings.map(
+            (warning) => `${sheet.design.name || `Sheet ${index + 1}`}: ${warning}`,
+          ),
+        )
+      : (plan?.warnings ?? [])
+  const layout = layoutSheets(previewSheets)
+  const exportLength = exportScope === 'project' ? layout.length : plan?.length
+  const exportWidth = exportScope === 'project' ? layout.width : plan?.width
+  const exportCuts =
+    exportScope === 'project'
+      ? previewSheets.reduce((count, sheet) => count + sheet.plan.cuts.length, 0)
+      : plan?.cuts.length
   return (
     <>
       <Dialog open={exportOpen} onOpenChange={setExportOpen}>
@@ -41,11 +68,52 @@ export function StudioDialogs({
             Export your laser cut plan or bend path at 1:1 scale in millimetres. Import without
             scaling.
           </DialogDescription>
+          <fieldset className="export-scope">
+            <legend>Sheets to export</legend>
+            <label>
+              <input
+                type="radio"
+                name="export-scope"
+                value="sheet"
+                checked={exportScope === 'sheet'}
+                onChange={() => setExportScope('sheet')}
+              />
+              <span>
+                Active sheet <small>{design.name || 'Untitled sheet'}</small>
+              </span>
+            </label>
+            <label>
+              <input
+                type="radio"
+                name="export-scope"
+                value="project"
+                checked={exportScope === 'project'}
+                onChange={() => setExportScope('project')}
+              />
+              <span>
+                All sheets <small>{project.sheets.length} in this project</small>
+              </span>
+            </label>
+          </fieldset>
+          {exportScope === 'project' && (
+            <p className="control-hint">
+              Laser plans are arranged side by side with a 10 mm gap. Sheets retain their own
+              material and cut settings; cut different materials separately.
+            </p>
+          )}
           <div className="export-preview" aria-busy={updating}>
-            {plan && displayDesign && (
+            {exportScope === 'project' ? (
+              <ProjectCutPlanView name={project.name} sheets={previewSheets} />
+            ) : plan && displayDesign ? (
               <CutPlanView design={displayDesign} plan={plan} large={false} />
-            )}
+            ) : null}
           </div>
+          {exportScope === 'project' && (
+            <p className="control-hint">
+              Preview: all sheets, in the exported laser layout. SVG files keep their physical size;
+              zoom out in your viewer to see the full layout.
+            </p>
+          )}
           {updating && (
             <p className="control-hint">Updating preview. Downloads use your latest settings.</p>
           )}
@@ -53,29 +121,39 @@ export function StudioDialogs({
             <div className="export-stats">
               <span>
                 <strong>
-                  {plan.length.toFixed(1)} × {plan.width.toFixed(1)}
+                  {exportLength?.toFixed(1)} × {exportWidth?.toFixed(1)}
                 </strong>
-                mm sheet size
+                {exportScope === 'project' ? 'mm export layout' : 'mm sheet size'}
               </span>
               <span>
-                <strong>{plan.cuts.length}</strong>hinge cuts
+                <strong>{exportCuts}</strong>hinge cuts
               </span>
               <span>
-                <strong>{design.thickness}</strong>mm plywood
+                <strong>
+                  {exportScope === 'project' ? project.sheets.length : design.thickness}
+                </strong>
+                {exportScope === 'project' ? 'sheets' : 'mm plywood'}
               </span>
             </div>
           )}
           <div className="export-note">
             <strong>Before you cut</strong>
             <p>
-              Red outlines and blue hinge lines are cut centre lines. Kerf ({design.kerf} mm) is
-              visualized, but no toolpath compensation is applied. Set compensation and laser power
-              in your cutter software. Test a material sample first; this preview does not simulate
-              strength or springback.
+              Red outlines and blue hinge lines are cut centre lines. Kerf{' '}
+              {exportScope === 'sheet' ? `(${design.kerf} mm) ` : ''}is visualized, but no toolpath
+              compensation is applied. Set compensation and laser power in your cutter software.
+              Test a material sample first; this preview does not simulate strength or springback.
             </p>
-            {!updating && plan && plan.warnings.length > 0 && (
+            {!updating && exportWarnings.length > 0 && (
               <ul>
-                {plan.warnings.map((warning) => (
+                {exportWarnings.map((warning, index) => (
+                  <li key={`${index}-${warning}`}>{warning}</li>
+                ))}
+              </ul>
+            )}
+            {!updating && exportScope === 'project' && assemblyWarnings.length > 0 && (
+              <ul aria-label="Assembly warnings">
+                {assemblyWarnings.map((warning) => (
                   <li key={warning}>{warning}</li>
                 ))}
               </ul>
@@ -99,10 +177,11 @@ export function StudioDialogs({
           <div className="bend-path-export export-note">
             <strong>A base for your bend</strong>
             <p>
-              Download the fully bent panel’s centreline, viewed from above, to lay out a routed
-              base. For Shaper Origin, use an on-line cut. This is a single path; set the groove
-              width, fit allowance, and depth in your router software for your {design.thickness} mm
-              plywood.
+              {exportScope === 'project'
+                ? 'Download every sheet’s fully bent centreline in its assembly position, viewed from above. Height is not included in this top view. '
+                : 'Download the fully bent panel’s centreline, viewed from above, to lay out a routed base. '}
+              For Shaper Origin, use an on-line cut. Set groove width, fit allowance, and depth in
+              your router software for each sheet’s plywood.
             </p>
             <Button
               variant="outline"
@@ -123,7 +202,7 @@ export function StudioDialogs({
           </div>
           <DialogTitle>A little flexibility goes a long way.</DialogTitle>
           <DialogDescription>
-            Turn a flat sheet of plywood into something with a little more dimension.
+            Build with sheets of plywood, each with its own shape, bend path, material, and cuts.
           </DialogDescription>
           <ol className="guide-steps">
             <li>
@@ -132,7 +211,8 @@ export function StudioDialogs({
                 <h3>Find your curve.</h3>
                 <p>
                   Start with a preset, then add straight sections and curves. Select a segment to
-                  set its length, radius, angle, and direction.
+                  set its length, radius, angle, and direction. Use the sheet tabs to add,
+                  duplicate, or switch sheets; each sheet keeps its own settings.
                 </p>
               </div>
             </li>
@@ -142,7 +222,8 @@ export function StudioDialogs({
                 <h3>Make your mark.</h3>
                 <p>
                   Choose a panel outline or draw a custom polygon. Its length follows the path. Its
-                  width runs across the sheet.
+                  width runs across the sheet. Position sheets in the assembly using the Design
+                  panel; warnings identify sheets that overlap when fully bent.
                 </p>
               </div>
             </li>
@@ -164,8 +245,8 @@ export function StudioDialogs({
                 <h3>Bring it to life.</h3>
                 <p>
                   Download test swatches to compare spacing and bridges in your own plywood. Set the
-                  separate labels layer to engrave. Then export your panel as SVG or DXF in
-                  millimetres; grain, glue, and laser kerf all affect the real bend.
+                  separate labels layer to engrave. Export one sheet or all sheets as SVG or DXF in
+                  millimetres. Save a project file to keep every sheet and its position.
                 </p>
               </div>
             </li>

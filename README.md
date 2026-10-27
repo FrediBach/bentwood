@@ -31,15 +31,25 @@ React Doctor is installed as a development dependency. Run `npm run doctor -- --
 
 ## Design a panel
 
+A project can contain up to **16 independent sheets**. Each sheet has its own bend path, outline, wood appearance, thickness, hinge pattern, and cut settings. The sheet tabs sit directly below the **3D preview / Flat outline / Cut plan** switch. Use **Add sheet**, **Duplicate active sheet**, and **Remove active sheet** beside the tabs; the project always keeps at least one sheet. Rename the active sheet in the Design panel. The project name at the top is separate from sheet names.
+
+The 3D preview shows the whole assembly. The flat outline, cut plan, sidebars, SVG outline import, and test swatches apply to the active sheet. Focus a sheet tab and use the arrow keys, `Home`, or `End` to switch sheets.
+
 1. Choose a starting form, or add straight and curved segments. Select a segment in the diagram or list to edit its length, radius, bend angle, and direction. The segments join tangentially.
 2. Choose a rectangle, square, ellipse, circle, triangle, or custom outline. The sheet’s unrolled length comes from the bend path. Panel width runs across the sheet; squares and circles link width to length.
 3. For a custom outline, drag vertices, double-click an edge to insert a vertex, or edit the selected point’s millimetre coordinates. Y increases upward, matching the 3D preview. Set **Corner radius** to round all corners; 0 keeps them sharp. The radius is limited locally to fit short edges and narrow sections. Dashed guides preserve the editable vertices when rounding is on. The outline must remain a simple polygon.
 4. Choose a hinge pattern and set plywood thickness, nominal laser kerf, cut spacing, bridge size, and cut length. Hinge cuts are generated in curved regions. Slit patterns retain connecting material between cuts; Honeycomb removes staggered openings to form their interlocking textures.
 5. Inspect the 3D form, unfold it with the slider, and review the flat outline and cut plan. Download a sheet of test swatches to try the selected pattern in your plywood. Export the panel as SVG or DXF when ready.
 
-Use **Import SVG outline** in the Panel outline sidebar, or **Import SVG** above the flat drawing, to upload one closed outline. Paths (including Bézier curves and arcs), polygons, closed polylines, rectangles, circles, ellipses, and group transforms are supported. The shape is scaled to the current unrolled bend-path length, preserving its proportions by updating panel width; the SVG's original physical size is not retained. Imported curves become editable polygon points, and corner radius resets to 0. Import works with undo, project saving, the 3D preview, and exports. Reimporting a Bentwood SVG uses its outer contour.
+Use **Import SVG outline** in the Panel outline sidebar, or **Import SVG** above the flat drawing, to upload one closed outline. Paths (including Bézier curves and arcs), polygons, closed polylines, rectangles, circles, ellipses, and group transforms are supported. The shape is scaled to the current unrolled bend-path length, preserving its proportions by updating panel width; the SVG's original physical size is not retained. Imported curves become editable polygon points, and corner radius resets to 0. Import works with undo, project saving, the 3D preview, and exports. Reimporting an active-sheet Bentwood SVG uses its outer contour; an all-sheet SVG contains multiple outlines and cannot be imported as one outline. Use project files to restore a complete assembly.
 
 SVG uploads are limited to 1 MB and 128 editable outline points. Overly complex shapes, holes, multiple outlines, self-intersections, and open paths cannot serve as an outline. Convert text, images, clipping, masks, filters, CSS geometry, and nested SVG viewports to a plain closed path before importing. Invalid files leave the current design intact.
+
+### Assemble multiple sheets
+
+Use **Position in assembly** in the Design panel to move the active sheet along **Position X**, **Height Y**, and **Position Z**, or change **Sheet rotation** around the vertical axis. Positions are millimetres, measured from the start of the sheet’s neutral-axis bend path; rotation is in degrees. Each path starts along positive X before rotation. A new sheet starts at the assembly origin, and a duplicate retains its source placement so you can move it into position.
+
+The warning icon beside the sheet tabs shows assembly warnings in every view. Hover, focus, or tap it to read the messages. Assembly warnings name sheets that overlap, cross, or touch when fully bent. Checks use the outline, thickness, placement, and nominal Honeycomb openings; laser kerf slits are not treated as assembly clearance. They use tessellated geometry and remain tied to the fully bent design while you unfold the preview. Dense openings may be checked as a solid outline, and overly complex intersection checks can be incomplete; the app shows a warning in either case. These checks do not model joinery or establish a physical fit.
 
 ### Hinge patterns
 
@@ -82,14 +92,18 @@ The desktop workspace stays within the viewport, with individual controls scroll
 - Drag the 3D preview to orbit, scroll to zoom, and use the camera menu for perspective, top, or front views. Focus the preview and use arrow keys to orbit, `+` / `−` to zoom, and `Home` to reset.
 - Controls respond immediately while detailed geometry updates in the background. The last complete preview stays visible with an updating indicator. Unfolding reuses the existing mesh, and downloads use the settings captured when you click, even while a preview is updating.
 - Focus an outline vertex and use arrow keys to move it; `Delete` / `Backspace` removes it when at least three vertices remain. Numeric coordinate fields offer precise editing.
-- `⌘/Ctrl Z` undoes, `⌘/Ctrl Shift Z` redoes, and `⌘/Ctrl S` downloads a project file.
-- The current design is saved automatically in browser `localStorage`. Version 4 stores the pattern family and its continuous shape parameters. Version 3 Small waves, Honeycomb, Fine meander, and Wide meander projects migrate to the corresponding family settings, retaining their shape parameters and dimensions. Material-clearance checks may leave unsafe edge cuts uncut. Other version 3 patterns are retained; version 1 and 2 projects migrate automatically to Classic. Version 1’s former edge margin is replaced with cuts that reach the outline. Use **Save project file** to keep a portable `.bentwood.json` backup and **Open project** to restore one.
+- `⌘/Ctrl Z` undoes, `⌘/Ctrl Shift Z` redoes, and `⌘/Ctrl S` downloads a project file. History covers the entire project, including adding, duplicating, removing, renaming, and positioning sheets.
+- The current project is saved automatically in browser `localStorage`. Version 5 stores the project name and every sheet with its own version 4 design and assembly placement. Existing single-sheet projects become a one-sheet project automatically, using the same `bentwood.design.v1` storage key. Version 3 Small waves, Honeycomb, Fine meander, and Wide meander designs migrate to the corresponding family settings, retaining their shape parameters and dimensions. Material-clearance checks may leave unsafe edge cuts uncut. Other version 3 patterns are retained; version 1 and 2 designs migrate automatically to Classic. Version 1’s former edge margin is replaced with cuts that reach the outline. Use **Save project file** to keep a portable `.bentwood.json` backup of all sheets and **Open project** to restore one.
 
 There is no backend, account, upload service, or cloud synchronization. Browser storage belongs to the current browser and site address; clearing site data removes the saved design. Download a project before moving between the local app and a hosted domain. If browser storage is unavailable, the app indicates that a download is needed to save.
 
 ## Laser exports
 
 SVG and DXF use **millimetres at 1:1 scale**. Import without resizing and verify the dimensions in the laser software.
+
+Choose **Active sheet** or **All sheets** in the export dialog. All-sheet laser files arrange flat sheets side by side with **10 mm gaps**, independent of their 3D placement. SVG retains the shared cut groups with uniquely identified sheet subgroups; DXF retains the shared cut layers. Sheet names, material, thickness, and nominal kerf are included as metadata, without adding engraving paths. Cut sheets with different materials or thicknesses separately using the appropriate laser settings. Every included sheet must pass the laser export checks; a failure in one sheet blocks the combined download. Test swatches always use the active sheet.
+
+The export preview shows the selected sheet or the complete all-sheet laser layout. Downloaded SVGs retain their physical dimensions, so a wide layout can extend beyond the window when opened in a browser or SVG viewer. Zoom out or fit the view to see every sheet; keep the design at 1:1 scale in the laser software.
 
 | Geometry          | SVG                       | DXF                   |
 | ----------------- | ------------------------- | --------------------- |
@@ -112,18 +126,20 @@ Exports are blocked when the nominal kerf is too wide to preserve a bridge or th
 
 Choose **Export → Download bend path SVG** to download the fully bent panel’s top-view centreline for laying out a routed base. The file uses **millimetres at 1:1 scale**, with exact straight lines and circular arcs, in the same orientation as the bend-path editor. It contains one unfilled grey path, without hinge cuts, labels, or a closing line between the endpoints. Full-circle bends retain their complete circumference. A 1 mm canvas margin keeps the stroke visible, including for straight-only paths; it does not alter the path’s dimensions.
 
+With **All sheets** selected, this download contains one neutral-axis path per sheet, using each sheet’s assembly X/Z position and rotation. Height is omitted from this top view. **Active sheet** exports its path in local sheet coordinates. Both scopes preserve exact lines and arcs.
+
 The path follows the panel’s **neutral axis**, not either surface of the plywood. It does not include a groove outline, thickness offset, cutter compensation, or fit allowance. Choose the groove width and depth for your actual plywood in your router/CAM workflow. On Shaper Origin, use an **On Line** cut; the cutter centres on the path, and stroke width does not set groove width ([Shaper’s cut type documentation](https://support.shapertools.com/hc/en-us/articles/115002721473-Cut-Type-Encoding)). The export always uses the fully bent design, regardless of the preview’s unfold slider, and is available independently of laser-pattern clearance checks.
 
 ## Geometry and physical limits
 
 - The bend path is a sequence of straight lines and circular arcs, measured at the sheet’s neutral axis. Unrolled length is the sum of straight lengths and arc lengths (`radius × angle in radians`).
-- The model represents a continuous sheet bent in one direction along that path. It supports developable forms, including concave panel outlines, but not compound curvature, twisting, branching, or multiple joined panels.
+- Each sheet represents a continuous panel bent in one direction along its own path. Projects can assemble multiple positioned sheets with developable forms, including concave panel outlines. Compound curvature, twisting, branching, and joinery between panels are not modeled.
 - Custom outlines have up to 128 editable vertices, with optional rounded corners. SVG curves are imported as polygon points; editing Bézier control handles and drawing freehand curves are not supported. User-defined interior holes are not supported; Honeycomb generates its own hinge openings. Self-intersecting and degenerate polygons are rejected. Older projects without a corner radius retain sharp corners.
 - The 3D surface is tessellated. Circle and ellipse previews use 128 outline vertices; their exported exterior curves remain analytic. Hinge endpoints intersect the actual polygon edges or the analytic circle/ellipse, so exported cuts reach the exported contour.
 - The preview preserves neutral-axis length while unfolding. It shows thickness, grain appearance, exposed plywood layers, and laser slots. Slots that meet the edge are subtracted from the contour, including its thickness walls. Above 2,500 cuts or 20,000 polyline segments, it displays every cut as a surface centre line and labels the simplified view; the export still includes the full pattern.
 - Material selection changes appearance. It is not a calibrated material model. Strength, glue layers, grain direction, hinge torsion, springback, heat effects, and assembly forces are not simulated.
-- Tight-bend, overlapping-path, narrow-span, and ligament warnings are geometric checks, not proof that a panel can be manufactured or will hold its shape. Test a small hinge using the intended plywood and cutter before production.
-- Designs are limited to 10,000 mm of path. Patterns estimated above 50,000 cuts or 250,000 toolpath segments are rejected to bound resource use. Imported project files are schema-validated and limited to 1 MB.
+- Tight-bend, overlapping-path, sheet-intersection, narrow-span, and ligament warnings are geometric checks, not proof that a panel can be manufactured or will hold its shape. Test a small hinge using the intended plywood and cutter before production.
+- Projects contain 1–16 sheets. Each sheet is limited to 10,000 mm of path. Patterns estimated above 50,000 cuts or 250,000 toolpath segments per sheet are rejected to bound resource use. Imported project files are schema-validated and limited to 1 MB. Assembly positions are limited to ±10,000 mm per axis and rotation to ±360°.
 
 ## Code map
 
@@ -137,6 +153,8 @@ instructions for agents working on this repository.
 | `src/hooks/useStudio.tsx`           | Design state, undo/redo, local persistence, project downloads, SVG import, and export actions         |
 | `src/components/studio/`            | Sidebars, navigation, canvas switching, controls, dialogs, and project file inputs                    |
 | `src/lib/types.ts`                  | Versioned project schema and geometry types                                                           |
+| `src/lib/project.ts`                | Multi-sheet project validation/migration and combined SVG, DXF, and bend-path exports                 |
+| `src/lib/sheet-intersections.ts`    | Worker-side checks for overlapping or touching sheet volumes                                          |
 | `src/lib/geometry.ts`               | Arc-length sampling, outlines, pattern generation, clipped hinge cuts, validation, SVG/DXF generation |
 | `src/lib/cut-path.ts`               | Shared cut-path points and drawing helpers                                                            |
 | `src/lib/cutout-lattice.ts`         | Staggered Honeycomb openings, clipped contours, and material-clearance checks                         |

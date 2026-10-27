@@ -46,7 +46,7 @@ test('slider dragging retains its final value and one undo step', async ({ page 
   const pending = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Save project file', exact: true }).click()
   const file = await pending
-  const saved = JSON.parse(await readFile((await file.path())!, 'utf8'))
+  const saved = JSON.parse(await readFile((await file.path())!, 'utf8')).sheets[0].design
   expect(saved.honeycombRoundness).toBe(0.7328)
 })
 
@@ -79,7 +79,7 @@ test('focusing rounded outline coordinates preserves imported precision', async 
   const pending = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Save project file', exact: true }).click()
   const file = await pending
-  const saved = JSON.parse(await readFile((await file.path())!, 'utf8'))
+  const saved = JSON.parse(await readFile((await file.path())!, 'utf8')).sheets[0].design
   expect(saved.customOutline).toEqual(design.customOutline)
   expect(saved.outlineCornerRadius).toBe(design.outlineCornerRadius)
   await expect(page.getByRole('button', { name: 'Undo (⌘ / Ctrl Z)', exact: true })).toBeDisabled()

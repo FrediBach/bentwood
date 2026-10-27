@@ -16,7 +16,7 @@ import {
 } from 'lucide-react'
 import { type ReactNode } from 'react'
 import { getPanelWidth } from '../../lib/geometry'
-import type { Design, OutlineKind, Segment } from '../../lib/types'
+import type { Design, OutlineKind, Segment, Sheet } from '../../lib/types'
 import { BendPathEditor } from '../DesignEditors'
 import { Button } from '../ui/button'
 import { IconButton, NumberField } from './StudioControls'
@@ -40,6 +40,8 @@ export function DesignSidebar({
   panel,
   setPanel,
   design,
+  activeSheet,
+  patchPlacement,
   selectedId,
   setSelectedId,
   update,
@@ -61,6 +63,8 @@ export function DesignSidebar({
   panel: 'path' | 'outline'
   setPanel: React.Dispatch<React.SetStateAction<'path' | 'outline'>>
   design: Design
+  activeSheet: Sheet
+  patchPlacement: (next: Partial<Sheet['placement']>) => void
   selectedId: string | null
   setSelectedId: React.Dispatch<React.SetStateAction<string | null>>
   update: (next: Design) => void
@@ -85,6 +89,55 @@ export function DesignSidebar({
         <p className="eyebrow">FROM FLAT TO FORM</p>
         <h1>Bend your idea.</h1>
         <p>A simple path. A world of possibilities.</p>
+      </div>
+      <div className="sheet-settings" key={activeSheet.id}>
+        <label className="sheet-name-field">
+          <span>Sheet name</span>
+          <input
+            value={design.name}
+            maxLength={60}
+            onChange={(event) => patch({ name: event.target.value })}
+          />
+        </label>
+        <details className="sheet-placement">
+          <summary>Position in assembly</summary>
+          <p className="control-hint">
+            Place the start of this sheet’s path. Y is height; rotation turns around Y.
+          </p>
+          <div className="field-row">
+            <NumberField
+              label="Position X"
+              value={activeSheet.placement.x}
+              onChange={(x) => patchPlacement({ x })}
+              min={-10000}
+              max={10000}
+            />
+            <NumberField
+              label="Position Z"
+              value={activeSheet.placement.z}
+              onChange={(z) => patchPlacement({ z })}
+              min={-10000}
+              max={10000}
+            />
+          </div>
+          <div className="field-row">
+            <NumberField
+              label="Height Y"
+              value={activeSheet.placement.y}
+              onChange={(y) => patchPlacement({ y })}
+              min={-10000}
+              max={10000}
+            />
+            <NumberField
+              label="Sheet rotation"
+              value={activeSheet.placement.rotation}
+              onChange={(rotation) => patchPlacement({ rotation })}
+              min={-360}
+              max={360}
+              unit="°"
+            />
+          </div>
+        </details>
       </div>
       <Tabs.Root value={panel} onValueChange={(v) => setPanel(v as 'path' | 'outline')}>
         <Tabs.List className="segment-tabs" aria-label="Design controls">

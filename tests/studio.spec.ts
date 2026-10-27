@@ -3,6 +3,8 @@ import AxeBuilder from '@axe-core/playwright'
 import { readFile } from 'node:fs/promises'
 import { defaultDesign } from '../src/lib/geometry'
 import type { Design } from '../src/lib/types'
+import type { Project } from '../src/lib/types'
+import { createProject, exportProject } from '../src/lib/project'
 
 const asymmetricOutline = [
   { x: 0, y: 0 },
@@ -11,6 +13,190 @@ const asymmetricOutline = [
   { x: 0.8, y: 1 },
   { x: 0, y: 0.4 },
 ]
+
+test('multiple sheets keep independent settings, shared history and project round trips', async ({
+  page,
+}) => {
+  await page.goto('/')
+  const tabs = page.getByRole('tablist', { name: 'Sheets', exact: true }).getByRole('tab')
+  await expect(tabs).toHaveCount(1)
+  await expect(
+    page.getByRole('button', { name: 'Remove active sheet', exact: true }),
+  ).toBeDisabled()
+  await page.getByLabel('Sheet name', { exact: true }).fill('Birch shell')
+  await page.getByRole('spinbutton', { name: 'Radius mm', exact: true }).fill('70')
+  await page.getByRole('spinbutton', { name: 'Radius mm', exact: true }).press('Tab')
+  await page.getByRole('button', { name: 'Add sheet', exact: true }).click()
+  await expect(tabs).toHaveCount(2)
+  await page.getByLabel('Sheet name', { exact: true }).fill('Walnut insert')
+  await page.getByLabel('Material appearance').selectOption('walnut')
+  await page.getByRole('radio', { name: 'Wavy slits', exact: true }).check()
+  await page.getByRole('tab', { name: 'Panel outline', exact: true }).click()
+  await page.getByRole('button', { name: 'Triangle', exact: true }).click()
+  await page.getByText('Position in assembly', { exact: true }).click()
+  await page.getByRole('spinbutton', { name: 'Position Z mm', exact: true }).fill('400')
+  await page.getByRole('spinbutton', { name: 'Position Z mm', exact: true }).press('Tab')
+  await tabs.nth(0).click()
+  await expect(page.getByLabel('Material appearance')).toHaveValue('birch')
+  await expect(page.getByRole('radio', { name: 'Classic', exact: true })).toBeChecked()
+  await page.getByRole('tab', { name: 'Bend path', exact: true }).click()
+  await expect(page.getByRole('spinbutton', { name: 'Radius mm', exact: true })).toHaveValue('70')
+  await tabs.nth(1).click()
+  // New sheets have their own default path; changing one never changes another.
+  await expect(page.getByLabel('Material appearance')).toHaveValue('walnut')
+  await page.locator('.segment-row').nth(1).click()
+  await expect(page.getByRole('spinbutton', { name: 'Radius mm', exact: true })).toHaveValue('50')
+  await page.getByRole('button', { name: 'Duplicate active sheet', exact: true }).click()
+  await expect(tabs).toHaveCount(3)
+  await expect(page.getByLabel('Sheet name', { exact: true })).toHaveValue('Walnut insert copy')
+  await page.getByRole('button', { name: 'Remove active sheet', exact: true }).click()
+  await expect(tabs).toHaveCount(2)
+  await page.getByRole('button', { name: 'Undo (⌘ / Ctrl Z)', exact: true }).click()
+  await expect(tabs).toHaveCount(3)
+  await page.getByRole('button', { name: 'Redo (⌘ / Ctrl Shift Z)', exact: true }).click()
+  await expect(tabs).toHaveCount(2)
+  await page.getByLabel('Project name').fill('Two woods')
+  const pending = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save project file', exact: true }).click()
+  const file = await pending
+  const project: Project = JSON.parse(await readFile((await file.path())!, 'utf8'))
+  expect(project.version).toBe(5)
+  expect(project.sheets.map((sheet) => sheet.design.material)).toEqual(['birch', 'walnut'])
+  expect(project.sheets[1].design).toMatchObject({ outline: 'triangle', pattern: 'wave' })
+  expect(project.sheets[1].placement.z).toBe(400)
+  await page.reload()
+  await expect(tabs).toHaveCount(2)
+  await expect(page.getByLabel('Project name')).toHaveValue('Two woods')
+  await page.getByRole('button', { name: 'Add sheet', exact: true }).click()
+  await page.getByLabel('Import project file').setInputFiles((await file.path())!)
+  await expect(tabs).toHaveCount(2)
+  await tabs.nth(1).click()
+  await expect(page.getByLabel('Material appearance')).toHaveValue('walnut')
+  await expect(page.getByRole('radio', { name: 'Wavy slits', exact: true })).toBeChecked()
+})
+
+test('assembly intersections warn for overlapping sheets and clear with placement', async ({
+  page,
+}) => {
+  await page.goto('/')
+  await page.getByLabel('Sheet name', { exact: true }).fill('Shell')
+  await page.getByRole('button', { name: 'Duplicate active sheet', exact: true }).click()
+  const warning = page
+    .locator('.sheet-navigation')
+    .getByRole('button', { name: 'Assembly warnings', exact: true })
+  const tooltip = page.getByRole('tooltip')
+  await expect(warning).toBeVisible()
+  await expect(page.locator('.studio-canvas .assembly-warning')).toHaveCount(0)
+  await warning.hover()
+  await expect(tooltip).toContainText('Shell copy')
+  await expect(tooltip).toContainText('overlap')
+  await page.screenshot({ path: 'test-results/assembly-warning-tooltip-desktop.png' })
+  await page.keyboard.press('Escape')
+  await expect(tooltip).toHaveCount(0)
+  await page.getByRole('heading', { name: 'Bend your idea.' }).hover()
+  await page.getByRole('tablist', { name: 'Sheets', exact: true }).getByRole('tab').first().focus()
+  await warning.focus()
+  await expect(tooltip).toContainText('Shell copy')
+  await page.keyboard.press('Escape')
+  await expect(tooltip).toHaveCount(0)
+  await page.getByRole('button', { name: 'Flat outline', exact: true }).click()
+  await expect(warning).toBeVisible()
+  await page.getByRole('button', { name: '3D preview', exact: true }).click()
+  await page.getByLabel('Unfold').fill('0')
+  await expect(warning).toBeVisible()
+  await page.getByText('Position in assembly', { exact: true }).click()
+  const z = page.getByRole('spinbutton', { name: 'Position Z mm', exact: true })
+  await z.fill('400')
+  await z.press('Tab')
+  await expect(page.locator('[data-geometry-state]')).toHaveAttribute(
+    'data-geometry-state',
+    'ready',
+  )
+  await expect(warning).toHaveCount(0)
+  await z.fill('0')
+  await z.press('Tab')
+  await expect(warning).toBeVisible()
+  const height = page.getByRole('spinbutton', { name: 'Height Y mm', exact: true })
+  await height.fill('200')
+  await height.press('Tab')
+  await expect(page.locator('[data-geometry-state]')).toHaveAttribute(
+    'data-geometry-state',
+    'ready',
+  )
+  await expect(warning).toHaveCount(0)
+  await page.screenshot({ path: 'test-results/multiple-sheets-desktop.png' })
+})
+
+test('all-sheet exports preserve each sheet and assembly bend paths', async ({ page }) => {
+  const project = createProject()
+  project.name = 'Assembly export'
+  project.sheets.push({
+    id: 'second',
+    design: {
+      ...defaultDesign,
+      name: 'Walnut circle',
+      material: 'walnut',
+      outline: 'circle',
+      thickness: 5,
+    },
+    placement: { x: 200.123456789, y: 20, z: 300, rotation: 35.123456789 },
+  })
+  await page.goto('/')
+  await page.getByLabel('Import project file').setInputFiles({
+    name: 'assembly.bentwood.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(project)),
+  })
+  await expect(page.getByLabel('Project name')).toHaveValue(project.name)
+  await page.getByRole('tablist', { name: 'Sheets', exact: true }).getByRole('tab').nth(1).click()
+  await page.getByText('Position in assembly', { exact: true }).click()
+  for (const name of ['Position X mm', 'Sheet rotation °']) {
+    const input = page.getByRole('spinbutton', { name, exact: true })
+    await input.focus()
+    await input.press('Tab')
+  }
+  const saved = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Save project file', exact: true }).click()
+  expect(JSON.parse(await readFile((await (await saved).path())!, 'utf8'))).toEqual(project)
+  await page.getByRole('button', { name: 'Export', exact: true }).click()
+  const preview = page.locator('.export-preview')
+  await expect(preview).toHaveAttribute('aria-busy', 'false')
+  await expect(preview.locator('[data-outline-contour]')).toHaveCount(1)
+  await page.getByRole('radio', { name: /All sheets/ }).check()
+  await expect(preview.getByRole('img')).toHaveAccessibleName(/laser cut layout: 2 sheets/)
+  await expect(preview.locator('[data-export-sheet]')).toHaveCount(2)
+  await expect(preview.locator('[data-outline-contour]')).toHaveCount(2)
+  const sheetBounds = await preview.locator('[data-outline-contour]').evaluateAll((outlines) =>
+    outlines.map((outline) => {
+      const bounds = outline.getBoundingClientRect()
+      return { left: bounds.left, right: bounds.right, bottom: bounds.bottom }
+    }),
+  )
+  expect(sheetBounds[1].left).toBeGreaterThan(sheetBounds[0].right)
+  expect(sheetBounds[1].bottom).toBeCloseTo(sheetBounds[0].bottom, 4)
+  await page.screenshot({ path: 'test-results/all-sheets-export-preview.png' })
+  await page.getByRole('radio', { name: /Active sheet/ }).check()
+  await expect(preview.locator('[data-outline-contour]')).toHaveCount(1)
+  await expect(preview.getByRole('img')).toHaveAccessibleName(/Walnut circle laser cut plan/)
+  const activeDownload = page.waitForEvent('download')
+  await page.getByRole('button', { name: 'Download SVG', exact: true }).click()
+  const activeFile = await activeDownload
+  expect(activeFile.suggestedFilename()).toBe('walnut-circle.svg')
+  const activeSource = await readFile((await activeFile.path())!, 'utf8')
+  expect(activeSource).not.toContain('sheet-1-outer-contour')
+  await page.getByRole('radio', { name: /All sheets/ }).check()
+  for (const [format, label] of [
+    ['svg', 'Download SVG'],
+    ['dxf', 'Download DXF'],
+    ['bend-path', 'Download bend path SVG'],
+  ] as const) {
+    const pending = page.waitForEvent('download')
+    await page.getByRole('button', { name: label, exact: true }).click()
+    const file = await pending
+    expect(file.suggestedFilename()).toContain('assembly-export-all-sheets')
+    expect(await readFile((await file.path())!, 'utf8')).toBe(exportProject(project, format))
+  }
+})
 
 test('preview, desktop sizing, accessibility and camera controls', async ({ page }) => {
   const errors: string[] = []
@@ -69,7 +255,7 @@ test('edit curves, undo, save, reload and import project', async ({ page }) => {
   const file = await saved
   expect(file.suggestedFilename()).toBe('wave-study.bentwood.json')
   const data = JSON.parse(await readFile((await file.path())!, 'utf8'))
-  expect(data.segments[1].radius).toBe(70)
+  expect(data.sheets[0].design.segments[1].radius).toBe(70)
   await page.reload()
   await expect(page.getByLabel('Project name')).toHaveValue('Wave study')
   await expect(page.getByRole('spinbutton', { name: 'Radius' })).toHaveValue('70')
@@ -133,7 +319,7 @@ test('path segment menus convert, reverse and delete the targeted segment', asyn
     const pending = page.waitForEvent('download')
     await page.getByRole('button', { name: 'Save project file', exact: true }).click()
     const file = await pending
-    return JSON.parse(await readFile((await file.path())!, 'utf8'))
+    return JSON.parse(await readFile((await file.path())!, 'utf8')).sheets[0].design
   }
 
   await page.getByRole('button', { name: 'Segment 1 actions', exact: true }).click()
@@ -268,7 +454,8 @@ for (const menu of ['actions button', 'context menu'] as const) {
     const pending = page.waitForEvent('download')
     await page.getByRole('button', { name: 'Save project file', exact: true }).click()
     const file = await pending
-    const project: Design = JSON.parse(await readFile((await file.path())!, 'utf8'))
+    const project: Design = JSON.parse(await readFile((await file.path())!, 'utf8')).sheets[0]
+      .design
     expect(project.segments).toEqual([
       { ...segments[0], radius: 70 },
       { ...segments[1], angle: -90 },
@@ -473,7 +660,7 @@ test('corner rounding survives undo, saving and export without replacing editabl
   const saved = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Save project file', exact: true }).click()
   const file = await saved
-  const project = JSON.parse(await readFile((await file.path())!, 'utf8'))
+  const project = JSON.parse(await readFile((await file.path())!, 'utf8')).sheets[0].design
   expect(project.outlineCornerRadius).toBe(12.5)
   expect(project.customOutline).toEqual(asymmetricOutline)
   await page.reload()
@@ -652,7 +839,7 @@ test('existing projects migrate to cuts that meet the panel edges', async ({ pag
   const saved = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Save project file', exact: true }).click()
   const file = await saved
-  const migrated = JSON.parse(await readFile((await file.path())!, 'utf8'))
+  const migrated = JSON.parse(await readFile((await file.path())!, 'utf8')).sheets[0].design
   expect(migrated.version).toBe(4)
   expect(migrated.pattern).toBe('classic')
   expect(migrated).not.toHaveProperty('edgeMargin')
@@ -705,7 +892,7 @@ test('hinge patterns update previews, exports and saved projects with test swatc
   const saved = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Save project file', exact: true }).click()
   const file = await saved
-  const project = JSON.parse(await readFile((await file.path())!, 'utf8'))
+  const project = JSON.parse(await readFile((await file.path())!, 'utf8')).sheets[0].design
   expect(project.pattern).toBe('wave')
   expect(project.version).toBe(4)
   await page.reload()
@@ -804,7 +991,7 @@ for (const pattern of [
     await page.screenshot({ path: `test-results/${pattern.id}-flat-preview.png` })
     await page.getByRole('button', { name: 'Cut plan', exact: true }).click()
     const closedCuts = page.locator('.cut-plan-view [data-hinge-cut][d$="Z"]')
-    expect(await closedCuts.count()).toBeGreaterThan(10)
+    await expect.poll(() => closedCuts.count()).toBeGreaterThan(10)
     const closedPath = await closedCuts.first().getAttribute('d')
     if (pattern.id === 'honeycomb') expect(closedPath!.match(/L/g)!.length).toBeGreaterThan(8)
     await page.screenshot({ path: `test-results/${pattern.id}-cut-plan.png` })
@@ -812,7 +999,7 @@ for (const pattern of [
     const saved = page.waitForEvent('download')
     await page.getByRole('button', { name: 'Save project file', exact: true }).click()
     const projectFile = await saved
-    const project = JSON.parse(await readFile((await projectFile.path())!, 'utf8'))
+    const project = JSON.parse(await readFile((await projectFile.path())!, 'utf8')).sheets[0].design
     expect(project.pattern).toBe('honeycomb')
     expect(project.honeycombRoundness).toBe(pattern.roundness)
     expect(project.honeycombWidth).toBe(pattern.openingWidth)
@@ -910,7 +1097,7 @@ for (const pattern of [
     const saved = page.waitForEvent('download')
     await page.getByRole('button', { name: 'Save project file', exact: true }).click()
     const projectFile = await saved
-    const project = JSON.parse(await readFile((await projectFile.path())!, 'utf8'))
+    const project = JSON.parse(await readFile((await projectFile.path())!, 'utf8')).sheets[0].design
     expect(project.pattern).toBe('meander')
     expect(project.meanderOverlap).toBe(pattern.overlap)
     expect(project.spacing).toBe(3.04)
@@ -1006,7 +1193,7 @@ test('parametric families preserve intermediate shapes through undo, saving and 
   let saved = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Save project file', exact: true }).click()
   let file = await saved
-  let project = JSON.parse(await readFile((await file.path())!, 'utf8'))
+  let project = JSON.parse(await readFile((await file.path())!, 'utf8')).sheets[0].design
   expect(project.version).toBe(4)
   expect(project.honeycombRoundness).toBe(0.375)
   expect(project.honeycombWidth).toBe(0.72)
@@ -1044,7 +1231,7 @@ test('parametric families preserve intermediate shapes through undo, saving and 
   saved = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Save project file', exact: true }).click()
   file = await saved
-  project = JSON.parse(await readFile((await file.path())!, 'utf8'))
+  project = JSON.parse(await readFile((await file.path())!, 'utf8')).sheets[0].design
   expect(project.pattern).toBe('meander')
   expect(project.meanderOverlap).toBe(0.125)
   expect(project.cutLength).toBe(28)
@@ -1067,7 +1254,7 @@ test('focusing a rounded percentage display preserves imported precision', async
   let saved = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Save project file', exact: true }).click()
   let file = await saved
-  const project = JSON.parse(await readFile((await file.path())!, 'utf8'))
+  const project = JSON.parse(await readFile((await file.path())!, 'utf8')).sheets[0].design
   Object.assign(project, {
     name: 'Precise parameters',
     pattern: 'meander',
@@ -1097,7 +1284,7 @@ test('focusing a rounded percentage display preserves imported precision', async
   saved = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Save project file', exact: true }).click()
   file = await saved
-  const savedProject = JSON.parse(await readFile((await file.path())!, 'utf8'))
+  const savedProject = JSON.parse(await readFile((await file.path())!, 'utf8')).sheets[0].design
   expect(savedProject.honeycombRoundness).toBe(project.honeycombRoundness)
   expect(savedProject.honeycombWidth).toBe(project.honeycombWidth)
   expect(savedProject.meanderOverlap).toBe(project.meanderOverlap)
@@ -1119,7 +1306,7 @@ test('3D preview supports open cuts on round and concave outlines', async ({ pag
   const saved = page.waitForEvent('download')
   await page.getByRole('button', { name: 'Save project file', exact: true }).click()
   const file = await saved
-  const project = JSON.parse(await readFile((await file.path())!, 'utf8'))
+  const project = JSON.parse(await readFile((await file.path())!, 'utf8')).sheets[0].design
   project.outline = 'custom'
   project.customOutline = [
     { x: 0, y: 0 },

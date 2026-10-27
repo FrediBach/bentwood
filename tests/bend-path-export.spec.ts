@@ -5,7 +5,7 @@ import type { Segment } from '../src/lib/types'
 
 test('downloads a bend path from the export dialog on desktop and mobile', async ({ page }) => {
   await page.goto('/')
-  await page.getByLabel('Project name').fill('Router base')
+  await page.getByLabel('Sheet name', { exact: true }).fill('Router base')
   await page.getByLabel('Unfold').fill('0')
   for (const viewport of [
     { width: 1440, height: 900 },
