@@ -17,6 +17,7 @@ import type { CutLine, Design, Point, Segment } from './types'
 import { cutPathData, cutPathLength, getCutPoints } from './cut-path'
 import { createPanelSurface } from './panel-surface'
 import { woodMaterials } from './wood-materials'
+import { convertSegmentType } from './segment-editing'
 
 const design = (overrides: Partial<Design> = {}): Design => ({
   ...structuredClone(defaultDesign),
@@ -48,6 +49,46 @@ function inside(point: Point, polygon: Point[]): boolean {
 }
 
 describe('neutral-axis path geometry', () => {
+  it.each([1, 5, 80.123456789, 1000, 2000])(
+    'converts a %s mm straight to a valid curve while preserving length and identity',
+    (length) => {
+      const source: Segment = { id: 'selected', type: 'straight', length }
+      const converted = convertSegmentType(source)!
+      expect(converted.id).toBe(source.id)
+      expect(converted.type).toBe('arc')
+      expect(segmentLength(converted)).toBeCloseTo(length, 10)
+      expect(validateDesign(design({ segments: [converted] }))).not.toBeNull()
+      const straight = convertSegmentType(converted)!
+      expect(straight).toEqual({
+        id: source.id,
+        type: 'straight',
+        length: segmentLength(converted),
+      })
+      expect(segmentLength(straight)).toBeCloseTo(length, 10)
+    },
+  )
+
+  it.each([-180, -27.125, 63.456789, 360])(
+    'straightens a %s° curve using arc distance, not its chord',
+    (angle) => {
+      const source: Segment = { id: 'curve', type: 'arc', radius: 70.123456, angle }
+      const converted = convertSegmentType(source)!
+      expect(converted).toEqual({ id: source.id, type: 'straight', length: segmentLength(source) })
+      expect(validateDesign(design({ segments: [converted] }))).not.toBeNull()
+    },
+  )
+
+  it('leaves arcs outside the straight-segment length range unchanged', () => {
+    for (const source of [
+      { id: 'short', type: 'arc', radius: 1, angle: 1 },
+      { id: 'long', type: 'arc', radius: 1000, angle: -360 },
+    ] as const) {
+      const original = { ...source }
+      expect(convertSegmentType(source)).toBeNull()
+      expect(source).toEqual(original)
+    }
+  })
+
   it('prepares exact samples for repeated, out-of-order positions and signed bends', () => {
     const segments: Segment[] = Array.from({ length: 50 }, (_, i) =>
       i % 3 === 0

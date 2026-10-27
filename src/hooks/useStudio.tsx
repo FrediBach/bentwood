@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { defaultDesign, pathLength, presets, validateDesign } from '../lib/geometry'
 import { familyPresets } from '../lib/pattern-presets'
+import { convertSegmentType } from '../lib/segment-editing'
 import { getTestSwatchSheetSize } from '../lib/test-swatches'
 import type { Design, OutlineKind, Segment } from '../lib/types'
 import type { ExportFormat } from '../lib/geometry-jobs'
@@ -32,9 +33,13 @@ export function useStudio() {
   }))
   const design = history.present
   const [view, setView] = useState<View>('preview')
-  const [selectedId, setSelectedId] = useState<string | null>(
+  const [requestedSelectedId, setSelectedId] = useState<string | null>(
     () => design.segments.find((s) => s.type === 'arc')?.id ?? design.segments[0].id,
   )
+  const selectedId =
+    requestedSelectedId === null || design.segments.some((s) => s.id === requestedSelectedId)
+      ? requestedSelectedId
+      : design.segments[0].id
   const [panel, setPanel] = useState<'path' | 'outline'>('path')
   const [bend, setBend] = useState(1)
   const [showGrid, setShowGrid] = useState(true)
@@ -74,12 +79,12 @@ export function useStudio() {
     .replace(/[^a-z0-9-]+/gi, '-')
     .toLowerCase()
   function update(next: Design) {
-    if (JSON.stringify(next) === JSON.stringify(design)) return
+    if (JSON.stringify(next) === JSON.stringify(design)) return true
     if (!validateDesign(next)) {
       setNotice(
         'This design exceeds the supported size or cut density. Reduce dimensions or increase cut spacing.',
       )
-      return
+      return false
     }
     const group = pointerHistory.current.active && pointerHistory.current.recorded
     if (pointerHistory.current.active) pointerHistory.current.recorded = true
@@ -88,9 +93,10 @@ export function useStudio() {
         ? h
         : { past: group ? h.past : [...h.past, h.present].slice(-100), present: next, future: [] },
     )
+    return true
   }
   function patch(next: Partial<Design>) {
-    update({ ...design, ...next })
+    return update({ ...design, ...next })
   }
   function undo() {
     setHistory((h) =>
@@ -169,6 +175,47 @@ export function useStudio() {
       ],
     })
     setSelectedId(id)
+  }
+  function reorderSegment(id: string, targetIndex: number) {
+    const index = design.segments.findIndex((segment) => segment.id === id)
+    if (index < 0 || !Number.isInteger(targetIndex)) return
+    const destination = Math.max(0, Math.min(design.segments.length - 1, targetIndex))
+    if (index === destination) return
+    const segments = [...design.segments]
+    const [segment] = segments.splice(index, 1)
+    segments.splice(destination, 0, segment)
+    patch({ segments })
+  }
+  function removeSegment(id: string) {
+    if (design.segments.length === 1) return
+    const index = design.segments.findIndex((segment) => segment.id === id)
+    if (index < 0) return
+    const segments = design.segments.filter((segment) => segment.id !== id)
+    if (patch({ segments }) && selectedId === id)
+      setSelectedId(segments[Math.min(index, segments.length - 1)].id)
+  }
+  function convertSegment(id: string) {
+    const segment = design.segments.find((candidate) => candidate.id === id)
+    if (!segment) return
+    const converted = convertSegmentType(segment)
+    if (!converted) {
+      setNotice(
+        'A straight segment must be between 1 and 2,000 mm. Adjust this curve’s radius or angle before converting it.',
+      )
+      return
+    }
+    patch({
+      segments: design.segments.map((candidate) => (candidate.id === id ? converted : candidate)),
+    })
+  }
+  function reverseSegment(id: string) {
+    patch({
+      segments: design.segments.map((segment) =>
+        segment.id === id && segment.type === 'arc'
+          ? { ...segment, angle: -segment.angle }
+          : segment,
+      ),
+    })
   }
   function applyPreset(p: (typeof presets)[number]) {
     patch({ segments: p.segments.map((s) => ({ ...s, id: crypto.randomUUID() })) })
@@ -316,6 +363,10 @@ export function useStudio() {
     saveProject,
     changeSegment,
     addSegment,
+    reorderSegment,
+    removeSegment,
+    convertSegment,
+    reverseSegment,
     applyPreset,
     shape,
     importOutline,

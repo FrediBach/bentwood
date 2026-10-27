@@ -78,6 +78,7 @@ The desktop workspace stays within the viewport, with individual controls scroll
 
 ### Controls and saving
 
+- Drag a path segment’s grip to reorder it, or focus the grip and press `Space`, use the arrow keys, then press `Space` to drop (`Esc` cancels). Open the row’s **⋯** menu or right-click it to move, delete, convert between straight and curve, or reverse a curve’s direction. Conversion preserves unrolled length; curves outside the 1–2,000 mm straight-segment range must be resized before conversion. The path always retains at least one segment, and each action supports undo and redo.
 - Drag the 3D preview to orbit, scroll to zoom, and use the camera menu for perspective, top, or front views. Focus the preview and use arrow keys to orbit, `+` / `−` to zoom, and `Home` to reset.
 - Controls respond immediately while detailed geometry updates in the background. The last complete preview stays visible with an updating indicator. Unfolding reuses the existing mesh, and downloads use the settings captured when you click, even while a preview is updating.
 - Focus an outline vertex and use arrow keys to move it; `Delete` / `Backspace` removes it when at least three vertices remain. Numeric coordinate fields offer precise editing.

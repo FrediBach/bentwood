@@ -29,11 +29,11 @@ async function saveProject(page: Page) {
 async function dismissNotice(page: Page) {
   const dismiss = page.getByRole('button', { name: 'Dismiss notification', exact: true })
   if (await dismiss.count()) await dismiss.click()
-  await expect(page.getByRole('status')).toHaveCount(0)
+  await expect(page.getByRole('status', { name: 'Notification' })).toHaveCount(0)
 }
 
 async function expectImportComplete(page: Page, success = true) {
-  const status = page.getByRole('status')
+  const status = page.getByRole('status', { name: 'Notification' })
   await expect(status).toBeVisible()
   if (success) await expect(status).toContainText('SVG outline imported.')
   else await expect(status).not.toContainText('SVG outline imported.')
@@ -224,7 +224,9 @@ test('unsupported SVG outlines report errors without replacing the current desig
       buffer: Buffer.from(source),
     })
     await expectImportComplete(page, false)
-    await expect(page.getByRole('status')).toContainText(/SVG|outline|closed|polygon/i)
+    await expect(page.getByRole('status', { name: 'Notification' })).toContainText(
+      /SVG|outline|closed|polygon/i,
+    )
     await expect(radius).toHaveValue('6')
     await expect(contour).toHaveAttribute('points', rounded!)
     await expect(page.getByLabel('Import SVG outline file')).toHaveValue('')
@@ -293,7 +295,9 @@ test('uploaded SVG active content is never inserted or executed', async ({ page 
       </svg>`),
   })
   await expectImportComplete(page, false)
-  await expect(page.getByRole('status')).toContainText(/SVG|outline|unsupported/i)
+  await expect(page.getByRole('status', { name: 'Notification' })).toContainText(
+    /SVG|outline|unsupported/i,
+  )
   expect(await page.evaluate(() => 'svgImportExecuted' in window)).toBe(false)
   expect(attemptedRequests).toEqual([])
   await expect(page.locator('svg[onload]')).toHaveCount(0)

@@ -86,6 +86,12 @@ Camera, unfold amount, active view, selected segment, mobile panel, dialogs, and
 are transient hook state. They are absent from project files and undo snapshots. Swatch
 dimensions are memoized; `useGeometry` owns asynchronous plan/mesh snapshots.
 
+`SegmentList.tsx` owns pointer/touch and keyboard sorting, committing a reorder only on drop.
+`SegmentActions.tsx` shares row actions between the context menu and the visible menu button.
+Reordering, removal, type conversion, and direction changes pass through `useStudio` and the
+normal validation/history path. `src/lib/segment-editing.ts` preserves segment IDs and neutral-axis
+length during conversion, rejecting arcs outside the straight segment’s supported length range.
+
 Numeric text fields commit on blur/Enter; percentage sliders display input immediately and
 coalesce design commits per animation frame, flushing before pointer-up closes the undo group.
 `useGeometry` lets input paint and coalesces geometry requests for 60 ms. `GeometryClient`

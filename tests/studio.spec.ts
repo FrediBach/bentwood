@@ -2,6 +2,7 @@ import { test, expect } from '@playwright/test'
 import AxeBuilder from '@axe-core/playwright'
 import { readFile } from 'node:fs/promises'
 import { defaultDesign } from '../src/lib/geometry'
+import type { Design } from '../src/lib/types'
 
 const asymmetricOutline = [
   { x: 0, y: 0 },
@@ -84,8 +85,237 @@ test('edit curves, undo, save, reload and import project', async ({ page }) => {
     mimeType: 'application/json',
     buffer: Buffer.from('{"bad":true}'),
   })
-  await expect(page.getByRole('status')).toContainText('not a valid Bentwood project')
+  await expect(page.getByRole('status', { name: 'Notification' })).toContainText(
+    'not a valid Bentwood project',
+  )
   await expect(page.getByLabel('Project name')).toHaveValue('Imported project')
+})
+
+test('path segments drag into order with one undo step and persist after reload', async ({
+  page,
+}) => {
+  await page.goto('/')
+  const rows = page.locator('.segment-row')
+  const ids = () =>
+    rows.evaluateAll((elements) => elements.map((row) => row.getAttribute('data-segment-id')))
+  const first = rows.filter({ has: page.locator('[aria-label="Reorder segment 1"]') })
+  await first.locator('.segment-select').click()
+  const handle = await page
+    .getByRole('button', { name: 'Reorder segment 1', exact: true })
+    .boundingBox()
+  const target = await rows.last().boundingBox()
+  expect(handle).not.toBeNull()
+  expect(target).not.toBeNull()
+  await page.mouse.move(handle!.x + handle!.width / 2, handle!.y + handle!.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(handle!.x + handle!.width / 2, target!.y + target!.height / 2, {
+    steps: 12,
+  })
+  await page.mouse.up()
+  await expect.poll(ids).toEqual(['s2', 's3', 's1'])
+  await expect(rows.last().locator('.segment-select')).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: 'Undo (⌘ / Ctrl Z)', exact: true }).click()
+  await expect.poll(ids).toEqual(['s1', 's2', 's3'])
+  await expect(page.getByRole('button', { name: 'Undo (⌘ / Ctrl Z)', exact: true })).toBeDisabled()
+  await page.getByRole('button', { name: 'Redo (⌘ / Ctrl Shift Z)', exact: true }).click()
+  await expect.poll(ids).toEqual(['s2', 's3', 's1'])
+  await page.reload()
+  await expect.poll(ids).toEqual(['s2', 's3', 's1'])
+  await expect(rows.locator('.segment-number')).toHaveText(['01', '02', '03'])
+})
+
+test('path segment menus convert, reverse and delete the targeted segment', async ({ page }) => {
+  await page.goto('/')
+  const rows = page.locator('.segment-row')
+  const first = page.locator('.segment-row[data-segment-id="s1"]')
+  const total = await page.locator('.path-total strong').textContent()
+  const save = async (): Promise<Design> => {
+    const pending = page.waitForEvent('download')
+    await page.getByRole('button', { name: 'Save project file', exact: true }).click()
+    const file = await pending
+    return JSON.parse(await readFile((await file.path())!, 'utf8'))
+  }
+
+  await page.getByRole('button', { name: 'Segment 1 actions', exact: true }).click()
+  await expect(page.getByRole('menuitem', { name: 'Move up', exact: true })).toBeDisabled()
+  await page.getByRole('menuitem', { name: 'Convert to curve', exact: true }).click()
+  await expect(first.locator('.segment-select')).toHaveAttribute('aria-pressed', 'true')
+  await expect(first).toContainText('Curve')
+  await expect(page.locator('.path-total strong')).toHaveText(total!)
+  const curved = (await save()).segments[0]
+  expect(curved.type).toBe('arc')
+  if (curved.type !== 'arc') throw new Error('Expected converted curve')
+  expect(curved.id).toBe('s1')
+  expect((curved.radius * Math.abs(curved.angle) * Math.PI) / 180).toBeCloseTo(75, 10)
+  // Merely focusing the rounded radius display must preserve the conversion's precision.
+  await page.getByRole('spinbutton', { name: 'Radius' }).focus()
+  await page.getByRole('spinbutton', { name: 'Radius' }).press('Tab')
+
+  await first.locator('.segment-select').click({ button: 'right' })
+  await page.screenshot({ path: 'test-results/segment-context-menu-desktop.png' })
+  await page.getByRole('menuitem', { name: 'Reverse curve direction', exact: true }).click()
+  await expect(first).toContainText('-90°')
+  await expect(rows.nth(1)).toContainText('180°')
+  await page.getByRole('button', { name: 'Undo (⌘ / Ctrl Z)', exact: true }).click()
+  await expect(first.locator('.segment-value')).toHaveText('90°')
+  await page.getByRole('button', { name: 'Redo (⌘ / Ctrl Shift Z)', exact: true }).click()
+  await expect(first.locator('.segment-value')).toHaveText('-90°')
+  const reversed = (await save()).segments[0]
+  expect(reversed).toEqual({ ...curved, angle: -curved.angle })
+
+  await first.locator('.segment-select').click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Convert to straight', exact: true }).click()
+  await expect(first).toContainText('Straight')
+  await expect(page.locator('.path-total strong')).toHaveText(total!)
+  const straight = (await save()).segments[0]
+  expect(straight.type).toBe('straight')
+  if (straight.type !== 'straight') throw new Error('Expected converted straight')
+  expect(straight.id).toBe('s1')
+  expect(straight.length).toBeCloseTo(75, 10)
+  await page.getByRole('button', { name: 'Undo (⌘ / Ctrl Z)', exact: true }).click()
+  await expect(first).toContainText('-90°')
+  await page.getByRole('button', { name: 'Redo (⌘ / Ctrl Shift Z)', exact: true }).click()
+
+  await page.getByRole('button', { name: 'Segment 1 actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Delete segment', exact: true }).click()
+  await expect(rows).toHaveCount(2)
+  await expect(rows.first()).toHaveAttribute('data-segment-id', 's2')
+  await expect(rows.first().locator('.segment-select')).toHaveAttribute('aria-pressed', 'true')
+  await page.getByRole('button', { name: 'Undo (⌘ / Ctrl Z)', exact: true }).click()
+  await expect(first).toBeVisible()
+  await page.getByRole('button', { name: 'Redo (⌘ / Ctrl Shift Z)', exact: true }).click()
+  await page.getByRole('button', { name: 'Segment 2 actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Delete segment', exact: true }).click()
+  await expect(rows).toHaveCount(1)
+  await page.getByRole('button', { name: 'Segment 1 actions', exact: true }).click()
+  await expect(page.getByRole('menuitem', { name: 'Delete segment', exact: true })).toBeDisabled()
+  await expect(page.getByRole('menuitem', { name: 'Move up', exact: true })).toBeDisabled()
+  await expect(page.getByRole('menuitem', { name: 'Move down', exact: true })).toBeDisabled()
+  await page.keyboard.press('Escape')
+  await page.reload()
+  await expect(rows).toHaveCount(1)
+  await expect(rows.first()).toHaveAttribute('data-segment-id', 's2')
+})
+
+test('path segments support keyboard sorting, cancellation and menu actions', async ({ page }) => {
+  await page.goto('/')
+  const rows = page.locator('.segment-row')
+  const ids = () =>
+    rows.evaluateAll((elements) => elements.map((row) => row.getAttribute('data-segment-id')))
+  const handle = page
+    .locator('.segment-row[data-segment-id="s1"]')
+    .getByRole('button', { name: /Reorder segment/ })
+  await handle.focus()
+  await page.keyboard.press('Space')
+  await expect(handle).toHaveAttribute('aria-pressed', 'true')
+  await page.keyboard.press('ArrowDown')
+  await expect(page.getByRole('status')).toHaveText('Move to position 2 of 3.')
+  await page.keyboard.press('Escape')
+  await expect.poll(ids).toEqual(['s1', 's2', 's3'])
+  await expect(page.getByRole('button', { name: 'Undo (⌘ / Ctrl Z)', exact: true })).toBeDisabled()
+  await handle.focus()
+  await page.keyboard.press('Space')
+  await expect(handle).toHaveAttribute('aria-pressed', 'true')
+  await page.keyboard.press('ArrowDown')
+  await expect(page.getByRole('status')).toHaveText('Move to position 2 of 3.')
+  await page.keyboard.press('Space')
+  await expect.poll(ids).toEqual(['s2', 's1', 's3'])
+  await expect(handle).toBeFocused()
+
+  const actions = page.getByRole('button', { name: 'Segment 2 actions', exact: true })
+  await actions.focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('menuitem', { name: 'Convert to curve', exact: true })).toBeFocused()
+  const moveDown = page.getByRole('menuitem', { name: 'Move down', exact: true })
+  await page.keyboard.press('ArrowDown')
+  await expect(page.getByRole('menuitem', { name: 'Move up', exact: true })).toBeFocused()
+  await page.keyboard.press('ArrowDown')
+  await expect(moveDown).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect.poll(ids).toEqual(['s2', 's3', 's1'])
+  await page.getByRole('button', { name: 'Undo (⌘ / Ctrl Z)', exact: true }).click()
+  await expect.poll(ids).toEqual(['s2', 's1', 's3'])
+  await page.getByRole('button', { name: 'Undo (⌘ / Ctrl Z)', exact: true }).click()
+  await expect.poll(ids).toEqual(['s1', 's2', 's3'])
+})
+
+for (const menu of ['actions button', 'context menu'] as const) {
+  test(`path segment ${menu} commits pending dimensions to the original segment`, async ({
+    page,
+  }) => {
+    await page.goto('/')
+    const segments: Design['segments'] = [
+      { id: 'first-arc', type: 'arc', radius: 50, angle: 90 },
+      { id: 'second-arc', type: 'arc', radius: 50, angle: 90 },
+    ]
+    await page.getByLabel('Import project file').setInputFiles({
+      name: 'equal-curves.bentwood.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify({ ...defaultDesign, segments })),
+    })
+    await page.locator('.segment-row[data-segment-id="first-arc"] .segment-select').click()
+    const radius = page.getByRole('spinbutton', { name: 'Radius' })
+    await radius.fill('70')
+    if (menu === 'actions button') {
+      await page.getByRole('button', { name: 'Segment 2 actions', exact: true }).click()
+    } else {
+      await page.locator('.segment-row[data-segment-id="second-arc"] .segment-select').click({
+        button: 'right',
+      })
+    }
+    await page.getByRole('menuitem', { name: 'Reverse curve direction', exact: true }).click()
+    await expect(radius).toHaveValue('50')
+    const pending = page.waitForEvent('download')
+    await page.getByRole('button', { name: 'Save project file', exact: true }).click()
+    const file = await pending
+    const project: Design = JSON.parse(await readFile((await file.path())!, 'utf8'))
+    expect(project.segments).toEqual([
+      { ...segments[0], radius: 70 },
+      { ...segments[1], angle: -90 },
+    ])
+  })
+}
+
+test.describe('touch path segments', () => {
+  test.use({ hasTouch: true, viewport: { width: 390, height: 844 } })
+
+  test('drag handles sort on touch screens and actions remain reachable', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Design', exact: true }).tap()
+    const rows = page.locator('.segment-row[data-segment-id]')
+    const handle = await page
+      .getByRole('button', { name: 'Reorder segment 1', exact: true })
+      .boundingBox()
+    const target = await rows.last().boundingBox()
+    expect(handle).not.toBeNull()
+    expect(target).not.toBeNull()
+    const x = handle!.x + handle!.width / 2
+    const fromY = handle!.y + handle!.height / 2
+    const toY = target!.y + target!.height / 2
+    const touch = await page.context().newCDPSession(page)
+    await touch.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ x, y: fromY }],
+    })
+    // Holding the sorting handle must not also open the row's long-press menu.
+    await page.waitForTimeout(750)
+    await expect(page.getByRole('menu')).toHaveCount(0)
+    for (let step = 1; step <= 10; step++) {
+      await touch.send('Input.dispatchTouchEvent', {
+        type: 'touchMove',
+        touchPoints: [{ x, y: fromY + ((toY - fromY) * step) / 10 }],
+      })
+    }
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] })
+    await touch.detach()
+    await expect(rows.first()).toHaveAttribute('data-segment-id', 's2')
+    await expect(rows.last()).toHaveAttribute('data-segment-id', 's1')
+    await page.getByRole('button', { name: 'Segment 3 actions', exact: true }).tap()
+    await page.screenshot({ path: 'test-results/segment-actions-mobile.png' })
+    await page.getByRole('menuitem', { name: 'Convert to curve', exact: true }).tap()
+    await expect(rows.last()).toContainText('Curve')
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390)
+  })
 })
 
 test('custom outline keyboard editing and exact cut downloads', async ({ page }) => {
@@ -906,7 +1136,7 @@ test('3D preview supports open cuts on round and concave outlines', async ({ pag
     mimeType: 'application/json',
     buffer: Buffer.from(JSON.stringify(project)),
   })
-  await expect(page.getByRole('status')).toContainText('Project opened.')
+  await expect(page.getByRole('status', { name: 'Notification' })).toContainText('Project opened.')
   await expect(page.locator('.plywood-preview canvas')).toBeVisible()
   await page.screenshot({ path: 'test-results/edge-concave-bent.png' })
   expect(errors).toEqual([])

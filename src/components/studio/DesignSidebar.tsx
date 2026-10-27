@@ -2,7 +2,6 @@ import * as Tabs from '@radix-ui/react-tabs'
 import {
   Circle,
   Layers3,
-  Minus,
   MousePointer2,
   MoveUpRight,
   Plus,
@@ -21,6 +20,7 @@ import type { Design, OutlineKind, Segment } from '../../lib/types'
 import { BendPathEditor } from '../DesignEditors'
 import { Button } from '../ui/button'
 import { IconButton, NumberField } from './StudioControls'
+import { SegmentList } from './SegmentList'
 type View = 'preview' | 'outline' | 'plan'
 
 const shapeOptions: { kind: OutlineKind; label: string; icon: ReactNode }[] = [
@@ -44,6 +44,10 @@ export function DesignSidebar({
   setSelectedId,
   update,
   addSegment,
+  reorderSegment,
+  removeSegment,
+  convertSegment,
+  reverseSegment,
   selected,
   patch,
   changeSegment,
@@ -61,6 +65,10 @@ export function DesignSidebar({
   setSelectedId: React.Dispatch<React.SetStateAction<string | null>>
   update: (next: Design) => void
   addSegment: (type: 'straight' | 'arc') => void
+  reorderSegment: (id: string, targetIndex: number) => void
+  removeSegment: (id: string) => void
+  convertSegment: (id: string) => void
+  reverseSegment: (id: string) => void
   selected: Segment | undefined
   patch: (next: Partial<Design>) => void
   changeSegment: (values: Partial<Segment>) => void
@@ -103,23 +111,15 @@ export function DesignSidebar({
             />
             <span className="diagram-caption">TOP VIEW · SELECT A SEGMENT</span>
           </div>
-          <div className="segments-list">
-            {design.segments.map((s, i) => (
-              <button
-                className={`segment-row ${s.id === selectedId ? 'selected' : ''}`}
-                key={s.id}
-                onClick={() => setSelectedId(s.id)}
-                aria-pressed={s.id === selectedId}
-              >
-                <span className="segment-number">{String(i + 1).padStart(2, '0')}</span>
-                {s.type === 'arc' ? <Waves size={17} /> : <Minus size={17} />}
-                <span>{s.type === 'arc' ? 'Curve' : 'Straight'}</span>
-                <span className="segment-value">
-                  {s.type === 'arc' ? `${s.angle}°` : `${s.length} mm`}
-                </span>
-              </button>
-            ))}
-          </div>
+          <SegmentList
+            segments={design.segments}
+            selectedId={selectedId}
+            onSelect={setSelectedId}
+            onReorder={reorderSegment}
+            onRemove={removeSegment}
+            onConvert={convertSegment}
+            onReverse={reverseSegment}
+          />
           <div className="add-segments">
             <Button
               variant="outline"
@@ -141,16 +141,13 @@ export function DesignSidebar({
             </Button>
           </div>
           {selected ? (
-            <div className="segment-properties">
+            <div className="segment-properties" key={selected.id}>
               <div className="section-label">
                 <span>{selected.type === 'arc' ? 'CURVE' : 'STRAIGHT'} SETTINGS</span>
                 <IconButton
                   label="Remove selected segment"
                   disabled={design.segments.length === 1}
-                  onClick={() => {
-                    patch({ segments: design.segments.filter((s) => s.id !== selectedId) })
-                    setSelectedId(null)
-                  }}
+                  onClick={() => removeSegment(selected.id)}
                 >
                   <X size={14} />
                 </IconButton>
@@ -186,7 +183,7 @@ export function DesignSidebar({
                     <span>Bend direction</span>
                     <button
                       aria-label="Reverse bend direction"
-                      onClick={() => changeSegment({ angle: -selected.angle })}
+                      onClick={() => reverseSegment(selected.id)}
                     >
                       <RotateCcw size={14} />
                       {selected.angle > 0 ? 'Left' : 'Right'}

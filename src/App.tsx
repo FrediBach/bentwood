@@ -60,6 +60,10 @@ export default function App() {
     saveProject,
     changeSegment,
     addSegment,
+    reorderSegment,
+    removeSegment,
+    convertSegment,
+    reverseSegment,
     applyPreset,
     shape,
     importOutline,
@@ -96,6 +100,10 @@ export default function App() {
             setSelectedId={setSelectedId}
             update={update}
             addSegment={addSegment}
+            reorderSegment={reorderSegment}
+            removeSegment={removeSegment}
+            convertSegment={convertSegment}
+            reverseSegment={reverseSegment}
             selected={selected}
             patch={patch}
             changeSegment={changeSegment}
@@ -177,7 +185,7 @@ export default function App() {
           importOutline={importOutline}
         />
         {notice && (
-          <div role="status" className="toast">
+          <div role="status" aria-label="Notification" className="toast">
             <Check size={17} />
             {notice}
             <button onClick={() => setNotice('')} aria-label="Dismiss notification">
